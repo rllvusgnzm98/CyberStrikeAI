@@ -273,6 +273,47 @@ function escapeHtmlLocal(text) {
     return div.innerHTML;
 }
 
+/**
+ * 与 internal/openai.normalizeStreamingDelta 一致：兼容网关/模型返回「累计全文」或整包重发，
+ * 避免前端 buffer += chunk 与后端已归一化的增量叠加导致逐段重复（如「响应中显示了响应中显示了」）。
+ * @returns {[string, string]} [nextBuffer, effectiveDelta]
+ */
+function normalizeStreamingDeltaJs(current, incoming) {
+    const cur = current == null ? '' : String(current);
+    const inc = incoming == null ? '' : String(incoming);
+    if (inc === '') {
+        return [cur, ''];
+    }
+    if (cur === '') {
+        return [inc, inc];
+    }
+    if (inc.startsWith(cur) && inc.length > cur.length) {
+        return [inc, inc.slice(cur.length)];
+    }
+    const runeCount = Array.from(cur).length;
+    if (inc === cur && runeCount > 1) {
+        return [cur, ''];
+    }
+    return [cur + inc, inc];
+}
+if (typeof window !== 'undefined') {
+    window.normalizeStreamingDeltaJs = normalizeStreamingDeltaJs;
+}
+
+/** 流式 delta：纯文本，避免每条全量 marked + DOMPurify */
+function setTimelineItemContentStreamPlain(contentEl, text) {
+    if (!contentEl) return;
+    contentEl.classList.add('timeline-stream-plain');
+    contentEl.textContent = text == null ? '' : String(text);
+}
+
+/** 流结束或非流式：富文本（已消毒的 HTML 字符串） */
+function setTimelineItemContentStreamRich(contentEl, html) {
+    if (!contentEl) return;
+    contentEl.classList.remove('timeline-stream-plain');
+    contentEl.innerHTML = html;
+}
+
 function formatAssistantMarkdownContent(text) {
     const raw = text == null ? '' : String(text);
     if (typeof marked !== 'undefined') {
@@ -1160,7 +1201,19 @@ function handleStreamEvent(event, progressElement, progressId,
                 state = new Map();
                 thinkingStreamStateByProgressId.set(progressId, state);
             }
-            // 若已存在，重置 buffer
+            // 同一 streamId 重复 start：复用已有条目，避免孤儿卡片 + 新条目重复收 delta
+            if (state.has(streamId)) {
+                const ex = state.get(streamId);
+                ex.buffer = '';
+                const existingItem = document.getElementById(ex.itemId);
+                if (existingItem) {
+                    const contentEl = existingItem.querySelector('.timeline-item-content');
+                    if (contentEl) {
+                        setTimelineItemContentStreamPlain(contentEl, '');
+                    }
+                }
+                break;
+            }
             const thinkBase = typeof window.t === 'function' ? window.t('chat.aiThinking') : 'AI思考';
             const title = timelineAgentBracketPrefix(d) + '🤔 ' + thinkBase;
             const itemId = addTimelineItem(timeline, 'thinking', {
@@ -1182,17 +1235,14 @@ function handleStreamEvent(event, progressElement, progressId,
             const s = state.get(streamId);
 
             const delta = event.message || '';
-            s.buffer += delta;
+            const merged = normalizeStreamingDeltaJs(s.buffer, delta);
+            s.buffer = merged[0];
 
             const item = document.getElementById(s.itemId);
             if (item) {
                 const contentEl = item.querySelector('.timeline-item-content');
                 if (contentEl) {
-                    if (typeof formatMarkdown === 'function') {
-                        contentEl.innerHTML = formatMarkdown(s.buffer);
-                    } else {
-                        contentEl.textContent = s.buffer;
-                    }
+                    setTimelineItemContentStreamPlain(contentEl, s.buffer);
                 }
             }
             break;
@@ -1210,11 +1260,10 @@ function handleStreamEvent(event, progressElement, progressId,
                     if (item) {
                         const contentEl = item.querySelector('.timeline-item-content');
                         if (contentEl) {
-                            // contentEl.innerHTML 用于兼容 Markdown 展示
                             if (typeof formatMarkdown === 'function') {
-                                contentEl.innerHTML = formatMarkdown(s.buffer);
+                                setTimelineItemContentStreamRich(contentEl, formatMarkdown(s.buffer));
                             } else {
-                                contentEl.textContent = s.buffer;
+                                setTimelineItemContentStreamPlain(contentEl, s.buffer);
                             }
                         }
                     }
@@ -1456,6 +1505,18 @@ function handleStreamEvent(event, progressElement, progressId,
                 stateMap = new Map();
                 einoAgentReplyStreamStateByProgressId.set(progressId, stateMap);
             }
+            if (stateMap.has(streamId)) {
+                const ex = stateMap.get(streamId);
+                ex.buffer = '';
+                const existingItem = document.getElementById(ex.itemId);
+                if (existingItem) {
+                    let contentEl = existingItem.querySelector('.timeline-item-content');
+                    if (contentEl) {
+                        setTimelineItemContentStreamPlain(contentEl, '');
+                    }
+                }
+                break;
+            }
             const streamingLabel = typeof window.t === 'function' ? window.t('timeline.running') : '执行中...';
             const replyTitleBase = typeof window.t === 'function' ? window.t('chat.einoAgentReplyTitle') : '子代理回复';
             const itemId = addTimelineItem(timeline, 'eino_agent_reply', {
@@ -1477,7 +1538,8 @@ function handleStreamEvent(event, progressElement, progressId,
             const stateMap = einoAgentReplyStreamStateByProgressId.get(progressId);
             if (!stateMap || !stateMap.has(streamId)) break;
             const s = stateMap.get(streamId);
-            s.buffer += delta;
+            const merged = normalizeStreamingDeltaJs(s.buffer, delta);
+            s.buffer = merged[0];
             const item = document.getElementById(s.itemId);
             if (item) {
                 let contentEl = item.querySelector('.timeline-item-content');
@@ -1490,11 +1552,7 @@ function handleStreamEvent(event, progressElement, progressId,
                     }
                 }
                 if (contentEl) {
-                    if (typeof formatMarkdown === 'function') {
-                        contentEl.innerHTML = formatMarkdown(s.buffer);
-                    } else {
-                        contentEl.textContent = s.buffer;
-                    }
+                    setTimelineItemContentStreamPlain(contentEl, s.buffer);
                 }
             }
             break;
@@ -1522,9 +1580,9 @@ function handleStreamEvent(event, progressElement, progressId,
                         item.appendChild(contentEl);
                     }
                     if (typeof formatMarkdown === 'function') {
-                        contentEl.innerHTML = formatMarkdown(full);
+                        setTimelineItemContentStreamRich(contentEl, formatMarkdown(full));
                     } else {
-                        contentEl.textContent = full;
+                        setTimelineItemContentStreamPlain(contentEl, full);
                     }
                     if (d.einoAgent != null && String(d.einoAgent).trim() !== '') {
                         item.dataset.einoAgent = String(d.einoAgent).trim();
@@ -1665,7 +1723,8 @@ function handleStreamEvent(event, progressElement, progressId,
             }
 
             const deltaContent = event.message || '';
-            state.buffer += deltaContent;
+            const mergedResp = normalizeStreamingDeltaJs(state.buffer, deltaContent);
+            state.buffer = mergedResp[0];
 
             // 更新时间线条目内容
             if (state.itemId) {
@@ -1675,11 +1734,7 @@ function handleStreamEvent(event, progressElement, progressId,
                     if (contentEl) {
                         const meta = state.streamMeta || responseData;
                         const body = formatTimelineStreamBody(state.buffer, meta);
-                        if (typeof formatMarkdown === 'function') {
-                            contentEl.innerHTML = formatMarkdown(body);
-                        } else {
-                            contentEl.textContent = body;
-                        }
+                        setTimelineItemContentStreamPlain(contentEl, body);
                     }
                 }
             }

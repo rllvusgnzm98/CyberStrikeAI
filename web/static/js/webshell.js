@@ -2898,7 +2898,10 @@ function runWebshellAiSend(conn, inputEl, sendBtn, messagesContainer) {
                     } else if (_et === 'response_delta') {
                         var deltaText = (_em != null && _em !== '') ? String(_em) : '';
                         if (deltaText) {
-                            streamingTarget += deltaText;
+                            var normR = (typeof window.normalizeStreamingDeltaJs === 'function')
+                                ? window.normalizeStreamingDeltaJs(streamingTarget, deltaText)
+                                : [streamingTarget + deltaText, deltaText];
+                            streamingTarget = normR[0];
                             webshellStreamingTypingId += 1;
                             streamingTypingId = webshellStreamingTypingId;
                             runWebshellAiStreamingTyping(assistantDiv, streamingTarget, streamingTypingId, messagesContainer);
@@ -2952,6 +2955,11 @@ function runWebshellAiSend(conn, inputEl, sendBtn, messagesContainer) {
 
                     // ─── Thinking (non-stream + stream) ───
                     } else if (_et === 'thinking_stream_start' && _ed.streamId) {
+                        if (wsThinkingStreams.has(_ed.streamId)) {
+                            var tsExist = wsThinkingStreams.get(_ed.streamId);
+                            tsExist.buf = '';
+                            if (tsExist.body) tsExist.body.textContent = '';
+                        } else {
                         var thinkSLabel = wsTOr('chat.aiThinking', 'AI 思考');
                         var thinkSItem = document.createElement('div');
                         thinkSItem.className = 'webshell-ai-timeline-item webshell-ai-timeline-thinking';
@@ -2962,11 +2970,14 @@ function runWebshellAiSend(conn, inputEl, sendBtn, messagesContainer) {
                         timelineContainer.appendChild(thinkSItem);
                         timelineContainer.classList.add('has-items');
                         wsThinkingStreams.set(_ed.streamId, { el: thinkSItem, body: thinkSPre, buf: '' });
+                        }
                         if (!streamingTarget) assistantDiv.textContent = '…';
                     } else if (_et === 'thinking_stream_delta' && _ed.streamId) {
                         var tsD = wsThinkingStreams.get(_ed.streamId);
                         if (tsD) {
-                            tsD.buf += (_em || '');
+                            var normT = (typeof window.normalizeStreamingDeltaJs === 'function')
+                                ? window.normalizeStreamingDeltaJs(tsD.buf, _em || '') : [tsD.buf + (_em || ''), _em || ''];
+                            tsD.buf = normT[0];
                             if (typeof formatMarkdown === 'function') {
                                 tsD.body.innerHTML = formatMarkdown(tsD.buf);
                             } else {
@@ -3076,6 +3087,12 @@ function runWebshellAiSend(conn, inputEl, sendBtn, messagesContainer) {
 
                     // ─── Eino sub-agent reply streaming ───
                     } else if (_et === 'eino_agent_reply_stream_start' && _ed.streamId) {
+                        if (einoSubReplyStreams.has(_ed.streamId)) {
+                            var stExist = einoSubReplyStreams.get(_ed.streamId);
+                            stExist.buf = '';
+                            var preExist = stExist.el && stExist.el.querySelector('.webshell-eino-reply-stream-body');
+                            if (preExist) preExist.textContent = '';
+                        } else {
                         var repTS = wsTOr('chat.einoAgentReplyTitle', '子代理回复');
                         var runTS = wsTOr('timeline.running', '执行中...');
                         var itemS = document.createElement('div');
@@ -3084,11 +3101,14 @@ function runWebshellAiSend(conn, inputEl, sendBtn, messagesContainer) {
                         timelineContainer.appendChild(itemS);
                         timelineContainer.classList.add('has-items');
                         einoSubReplyStreams.set(_ed.streamId, { el: itemS, buf: '' });
+                        }
                         if (!streamingTarget) assistantDiv.textContent = '…';
                     } else if (_et === 'eino_agent_reply_stream_delta' && _ed.streamId) {
                         var stD = einoSubReplyStreams.get(_ed.streamId);
                         if (stD) {
-                            stD.buf += (_em || '');
+                            var normS = (typeof window.normalizeStreamingDeltaJs === 'function')
+                                ? window.normalizeStreamingDeltaJs(stD.buf, _em || '') : [stD.buf + (_em || ''), _em || ''];
+                            stD.buf = normS[0];
                             var preD = stD.el.querySelector('.webshell-eino-reply-stream-body');
                             if (!preD) {
                                 preD = document.createElement('pre');

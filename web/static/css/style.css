@@ -3623,6 +3623,12 @@ header {
     line-height: 1.6;
 }
 
+/* 流式增量阶段纯文本展示（避免半段 Markdown 反复解析） */
+.timeline-item-content.timeline-stream-plain {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 .tool-details {
     display: flex;
     flex-direction: column;
@@ -18298,6 +18304,10 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
 .chat-files-toast.chat-files-toast-visible {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
+}
+
+.chat-files-toast.chat-toast--error {
+    background: #b91c1c;
 }
 
 /* 对话附件读取 / 文件管理上传 进度条 */

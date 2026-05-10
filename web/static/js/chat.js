@@ -51,6 +51,28 @@ const HITL_MODE_REVIEW_EDIT = 'review_edit';
 const HITL_MODE_OPTIONS = [HITL_MODE_OFF, HITL_MODE_APPROVAL, HITL_MODE_REVIEW_EDIT];
 let hitlApplyFeedbackTimer = null;
 
+/** 非阻塞提示（与 chat-files-toast 样式共用） */
+function showChatToast(message, type) {
+    const text = message == null ? '' : String(message);
+    if (!text) return;
+    const el = document.createElement('div');
+    el.className = 'chat-files-toast' + (type === 'error' ? ' chat-toast--error' : '');
+    el.setAttribute('role', 'status');
+    el.textContent = text;
+    document.body.appendChild(el);
+    requestAnimationFrame(function () {
+        el.classList.add('chat-files-toast-visible');
+    });
+    const hideMs = type === 'error' ? 4500 : 2600;
+    setTimeout(function () {
+        el.classList.remove('chat-files-toast-visible');
+        setTimeout(function () { el.remove(); }, 300);
+    }, hideMs);
+}
+if (typeof window !== 'undefined') {
+    window.showChatToast = showChatToast;
+}
+
 function normalizeOrchestrationClient(s) {
     const v = String(s || '').trim().toLowerCase().replace(/-/g, '_');
     if (v === 'plan_execute' || v === 'planexecute' || v === 'pe') return 'plan_execute';
@@ -293,7 +315,7 @@ function showHitlApplyFeedback(text, isError, partial) {
     }
     if (!el) {
         if (text && isError) {
-            alert(text);
+            showChatToast(text, 'error');
         }
         return;
     }
@@ -2853,7 +2875,7 @@ async function loadConversation(conversationId) {
         const conversation = await response.json();
         
         if (!response.ok) {
-            alert('加载对话失败: ' + (conversation.error || '未知错误'));
+            showChatToast('加载对话失败: ' + (conversation.error || '未知错误'), 'error');
             return;
         }
         if (seq !== loadConversationRequestSeq) {
@@ -3061,7 +3083,7 @@ async function loadConversation(conversationId) {
         }
     } catch (error) {
         console.error('加载对话失败:', error);
-        alert('加载对话失败: ' + error.message);
+        showChatToast('加载对话失败: ' + (error && error.message ? error.message : String(error)), 'error');
     }
 }
 
