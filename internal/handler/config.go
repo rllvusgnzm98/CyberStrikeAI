@@ -1312,6 +1312,19 @@ func updateOpenAIConfig(doc *yaml.Node, cfg config.OpenAIConfig) {
 	if cfg.MaxTotalTokens > 0 {
 		setIntInMap(openaiNode, "max_total_tokens", cfg.MaxTotalTokens)
 	}
+	rn := ensureMap(openaiNode, "reasoning")
+	if strings.TrimSpace(cfg.Reasoning.Mode) != "" {
+		setStringInMap(rn, "mode", cfg.Reasoning.Mode)
+	}
+	if strings.TrimSpace(cfg.Reasoning.Effort) != "" {
+		setStringInMap(rn, "effort", cfg.Reasoning.Effort)
+	}
+	if cfg.Reasoning.AllowClientReasoning != nil {
+		setBoolInMap(rn, "allow_client_reasoning", *cfg.Reasoning.AllowClientReasoning)
+	}
+	if strings.TrimSpace(cfg.Reasoning.Profile) != "" {
+		setStringInMap(rn, "profile", cfg.Reasoning.Profile)
+	}
 }
 
 func updateFOFAConfig(doc *yaml.Node, cfg config.FofaConfig) {

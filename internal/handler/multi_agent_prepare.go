@@ -55,13 +55,7 @@ func (h *AgentHandler) prepareMultiAgentSession(req *ChatRequest) (*multiAgentPr
 		if getErr != nil {
 			agentHistoryMessages = []agent.ChatMessage{}
 		} else {
-			agentHistoryMessages = make([]agent.ChatMessage, 0, len(historyMessages))
-			for _, msg := range historyMessages {
-				agentHistoryMessages = append(agentHistoryMessages, agent.ChatMessage{
-					Role:    msg.Role,
-					Content: msg.Content,
-				})
-			}
+			agentHistoryMessages = dbMessagesToAgentChatMessages(historyMessages)
 		}
 	}
 

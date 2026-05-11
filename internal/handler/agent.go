@@ -19,6 +19,7 @@ import (
 	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
+	"cyberstrike-ai/internal/reasoning"
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/mcp/builtin"
 	"cyberstrike-ai/internal/multiagent"
@@ -201,6 +202,14 @@ type ChatAttachment struct {
 	ServerPath string `json:"serverPath,omitempty"` // 已保存在 chat_uploads 下的绝对路径（由 POST /api/chat-uploads 返回）
 }
 
+// ChatReasoningRequest 对话页「模型推理」意图（仅 Eino 路径消费；原生 agent-loop 忽略）。
+type ChatReasoningRequest struct {
+	// Mode: default（跟随系统）| off | on | auto
+	Mode string `json:"mode,omitempty"`
+	// Effort: low | medium | high | max；空表示不指定（由系统默认与各 profile 决定）。
+	Effort string `json:"effort,omitempty"`
+}
+
 // ChatRequest 聊天请求
 type ChatRequest struct {
 	Message              string           `json:"message" binding:"required"`
@@ -209,8 +218,16 @@ type ChatRequest struct {
 	Attachments          []ChatAttachment `json:"attachments,omitempty"`
 	WebShellConnectionID string           `json:"webshellConnectionId,omitempty"` // WebShell 管理 - AI 助手：当前选中的连接 ID，仅使用 webshell_* 工具
 	Hitl                 *HITLRequest     `json:"hitl,omitempty"`
+	Reasoning            *ChatReasoningRequest `json:"reasoning,omitempty"`
 	// Orchestration 仅对 /api/multi-agent、/api/multi-agent/stream：deep | plan_execute | supervisor；空则等同 deep。机器人/批量等无请求体时由服务端默认 deep。/api/eino-agent* 不使用此字段。
 	Orchestration string `json:"orchestration,omitempty"`
+}
+
+func chatReasoningToClientIntent(r *ChatReasoningRequest) *reasoning.ClientIntent {
+	if r == nil {
+		return nil
+	}
+	return &reasoning.ClientIntent{Mode: r.Mode, Effort: r.Effort}
 }
 
 type HITLRequest struct {
@@ -567,14 +584,7 @@ func (h *AgentHandler) AgentLoop(c *gin.Context) {
 			h.logger.Warn("获取历史消息失败", zap.Error(err))
 			agentHistoryMessages = []agent.ChatMessage{}
 		} else {
-			// 将数据库消息转换为Agent消息格式
-			agentHistoryMessages = make([]agent.ChatMessage, 0, len(historyMessages))
-			for _, msg := range historyMessages {
-				agentHistoryMessages = append(agentHistoryMessages, agent.ChatMessage{
-					Role:    msg.Role,
-					Content: msg.Content,
-				})
-			}
+			agentHistoryMessages = dbMessagesToAgentChatMessages(historyMessages)
 			h.logger.Info("从消息表加载历史消息", zap.Int("count", len(agentHistoryMessages)))
 		}
 	} else {
@@ -775,6 +785,7 @@ func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, conversationI
 			progressCallback,
 			h.agentsMarkdownDir,
 			"deep",
+			nil,
 		)
 		if errMA != nil {
 			if shouldPersistEinoAgentTraceAfterRunError(ctx) {
@@ -788,17 +799,8 @@ func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, conversationI
 			return "", conversationID, errMA
 		}
 		if assistantMessageID != "" {
-			mcpIDsJSON := ""
-			if len(resultMA.MCPExecutionIDs) > 0 {
-				jsonData, _ := json.Marshal(resultMA.MCPExecutionIDs)
-				mcpIDsJSON = string(jsonData)
-			}
-			_, err = h.db.Exec(
-				"UPDATE messages SET content = ?, mcp_execution_ids = ?, updated_at = ? WHERE id = ?",
-				resultMA.Response, mcpIDsJSON, time.Now(), assistantMessageID,
-			)
-			if err != nil {
-				h.logger.Warn("机器人：更新助手消息失败", zap.Error(err))
+			if errU := h.db.UpdateAssistantMessageFinalize(assistantMessageID, resultMA.Response, resultMA.MCPExecutionIDs, multiagent.AggregatedReasoningFromTraceJSON(resultMA.LastAgentTraceInput)); errU != nil {
+				h.logger.Warn("机器人：更新助手消息失败", zap.Error(errU))
 			}
 		} else {
 			if _, err = h.db.AddMessage(conversationID, "assistant", resultMA.Response, resultMA.MCPExecutionIDs); err != nil {
@@ -823,17 +825,8 @@ func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, conversationI
 
 	// 更新助手消息内容与 MCP 执行 ID（与 stream 一致）
 	if assistantMessageID != "" {
-		mcpIDsJSON := ""
-		if len(result.MCPExecutionIDs) > 0 {
-			jsonData, _ := json.Marshal(result.MCPExecutionIDs)
-			mcpIDsJSON = string(jsonData)
-		}
-		_, err = h.db.Exec(
-		"UPDATE messages SET content = ?, mcp_execution_ids = ?, updated_at = ? WHERE id = ?",
-		result.Response, mcpIDsJSON, time.Now(), assistantMessageID,
-		)
-		if err != nil {
-			h.logger.Warn("机器人：更新助手消息失败", zap.Error(err))
+		if errU := h.db.UpdateAssistantMessageFinalize(assistantMessageID, result.Response, result.MCPExecutionIDs, multiagent.AggregatedReasoningFromTraceJSON(result.LastAgentTraceInput)); errU != nil {
+			h.logger.Warn("机器人：更新助手消息失败", zap.Error(errU))
 		}
 	} else {
 		if _, err = h.db.AddMessage(conversationID, "assistant", result.Response, result.MCPExecutionIDs); err != nil {
@@ -891,10 +884,12 @@ func (h *AgentHandler) createProgressCallback(runCtx context.Context, cancelRun 
 		return ""
 	}
 
-	// thinking_stream_*：不逐条落库，按 streamId 聚合，在后续关键事件前补一条可持久化的 thinking
+	// thinking_stream_*（ReAct 等助手正文流）与 reasoning_chain_stream_*（Eino ReasoningContent）：
+	// 不逐条落库，按 streamId 聚合，flush 时分别落 thinking / reasoning_chain。
 	type thinkingBuf struct {
-		b    strings.Builder
-		meta map[string]interface{}
+		b         strings.Builder
+		meta      map[string]interface{}
+		persistAs string // "thinking" | "reasoning_chain"
 	}
 	thinkingStreams := make(map[string]*thinkingBuf) // streamId -> buf
 	flushedThinking := make(map[string]bool)         // streamId -> flushed
@@ -948,8 +943,12 @@ func (h *AgentHandler) createProgressCallback(runCtx context.Context, cancelRun 
 				}
 				data[k] = v
 			}
-			if err := h.db.AddProcessDetail(assistantMessageID, conversationID, "thinking", content, data); err != nil {
-				h.logger.Warn("保存过程详情失败", zap.Error(err), zap.String("eventType", "thinking"))
+			persist := tb.persistAs
+			if persist != "reasoning_chain" {
+				persist = "thinking"
+			}
+			if err := h.db.AddProcessDetail(assistantMessageID, conversationID, persist, content, data); err != nil {
+				h.logger.Warn("保存过程详情失败", zap.Error(err), zap.String("eventType", persist))
 			}
 			flushedThinking[sid] = true
 		}
@@ -1177,14 +1176,20 @@ func (h *AgentHandler) createProgressCallback(runCtx context.Context, cancelRun 
 			return
 		}
 
-		// 聚合 thinking_stream_*（ReasoningContent），不逐条落库
-		if eventType == "thinking_stream_start" {
+		// 聚合 thinking_stream_* / reasoning_chain_stream_*，不逐条落库
+		if eventType == "thinking_stream_start" || eventType == "reasoning_chain_stream_start" {
+			persistAs := "thinking"
+			if eventType == "reasoning_chain_stream_start" {
+				persistAs = "reasoning_chain"
+			}
 			if dataMap, ok := data.(map[string]interface{}); ok {
 				if sid, ok2 := dataMap["streamId"].(string); ok2 && sid != "" {
 					tb := thinkingStreams[sid]
 					if tb == nil {
-						tb = &thinkingBuf{meta: map[string]interface{}{}}
+						tb = &thinkingBuf{meta: map[string]interface{}{}, persistAs: persistAs}
 						thinkingStreams[sid] = tb
+					} else {
+						tb.persistAs = persistAs
 					}
 					// 记录元信息（source/einoAgent/einoRole/iteration 等）
 					for k, v := range dataMap {
@@ -1194,15 +1199,21 @@ func (h *AgentHandler) createProgressCallback(runCtx context.Context, cancelRun 
 			}
 			return
 		}
-		if eventType == "thinking_stream_delta" {
+		if eventType == "thinking_stream_delta" || eventType == "reasoning_chain_stream_delta" {
+			persistAs := "thinking"
+			if eventType == "reasoning_chain_stream_delta" {
+				persistAs = "reasoning_chain"
+			}
 			if dataMap, ok := data.(map[string]interface{}); ok {
 				if sid, ok2 := dataMap["streamId"].(string); ok2 && sid != "" {
 					tb := thinkingStreams[sid]
 					if tb == nil {
-						tb = &thinkingBuf{meta: map[string]interface{}{}}
+						tb = &thinkingBuf{meta: map[string]interface{}{}, persistAs: persistAs}
 						thinkingStreams[sid] = tb
+					} else if tb.persistAs == "" {
+						tb.persistAs = persistAs
 					}
-					// delta 片段直接拼接；message 本身就是 reasoning content
+					// delta 片段直接拼接
 					tb.b.WriteString(message)
 					// 有时 delta 先到 start 未到，补充元信息
 					for k, v := range dataMap {
@@ -1213,10 +1224,9 @@ func (h *AgentHandler) createProgressCallback(runCtx context.Context, cancelRun 
 			return
 		}
 
-		// 当 Agent 同时发送 thinking_stream_* 和 thinking（带同一 streamId）时，
-		// thinking_stream_* 已经会在 flushThinkingStreams() 聚合落库；
-		// 这里跳过同 streamId 的 thinking，避免 processDetails 双份展示。
-		if eventType == "thinking" {
+		// 当 Agent 同时发送 *_stream_* 与同名 streamId 的 thinking/reasoning_chain 时，
+		// 流式聚合已会在 flushThinkingStreams() 落库；此处跳过逐条重复。
+		if eventType == "thinking" || eventType == "reasoning_chain" {
 			if dataMap, ok := data.(map[string]interface{}); ok {
 				if sid, ok2 := dataMap["streamId"].(string); ok2 && sid != "" {
 					if tb, exists := thinkingStreams[sid]; exists && tb != nil {
@@ -1245,7 +1255,7 @@ func (h *AgentHandler) createProgressCallback(runCtx context.Context, cancelRun 
 			if eventType == "tool_result" {
 				discardPlanningIfEchoesToolResult(&respPlan, data)
 			}
-			// 在关键过程事件落库前，先把「规划中」与 thinking_stream 落库
+			// 在关键过程事件落库前，先把「规划中」与聚合中的 thinking / reasoning_chain 流落库
 			flushResponsePlan()
 			flushThinkingStreams()
 			if err := h.db.AddProcessDetail(assistantMessageID, conversationID, eventType, message, data); err != nil {
@@ -1427,14 +1437,7 @@ func (h *AgentHandler) AgentLoopStream(c *gin.Context) {
 			h.logger.Warn("获取历史消息失败", zap.Error(err))
 			agentHistoryMessages = []agent.ChatMessage{}
 		} else {
-			// 将数据库消息转换为Agent消息格式
-			agentHistoryMessages = make([]agent.ChatMessage, 0, len(historyMessages))
-			for _, msg := range historyMessages {
-				agentHistoryMessages = append(agentHistoryMessages, agent.ChatMessage{
-					Role:    msg.Role,
-					Content: msg.Content,
-				})
-			}
+			agentHistoryMessages = dbMessagesToAgentChatMessages(historyMessages)
 			h.logger.Info("从消息表加载历史消息", zap.Int("count", len(agentHistoryMessages)))
 		}
 	} else {
@@ -1727,20 +1730,8 @@ func (h *AgentHandler) AgentLoopStream(c *gin.Context) {
 
 	// 更新助手消息内容
 	if assistantMsg != nil {
-		_, err = h.db.Exec(
-			"UPDATE messages SET content = ?, mcp_execution_ids = ?, updated_at = ? WHERE id = ?",
-			result.Response,
-			func() string {
-				if len(result.MCPExecutionIDs) > 0 {
-					jsonData, _ := json.Marshal(result.MCPExecutionIDs)
-					return string(jsonData)
-				}
-				return ""
-			}(),
-			time.Now(), assistantMessageID,
-		)
-		if err != nil {
-			h.logger.Error("更新助手消息失败", zap.Error(err))
+		if errU := h.db.UpdateAssistantMessageFinalize(assistantMessageID, result.Response, result.MCPExecutionIDs, multiagent.AggregatedReasoningFromTraceJSON(result.LastAgentTraceInput)); errU != nil {
+			h.logger.Error("更新助手消息失败", zap.Error(errU))
 		}
 	} else {
 		// 如果之前创建失败，现在创建
@@ -2664,12 +2655,12 @@ func (h *AgentHandler) executeBatchQueue(queueID string) {
 			var runErr error
 			switch {
 			case useBatchMulti:
-				resultMA, runErr = multiagent.RunDeepAgent(taskCtx, h.config, &h.config.MultiAgent, h.agent, h.logger, conversationID, finalMessage, []agent.ChatMessage{}, roleTools, progressCallback, h.agentsMarkdownDir, batchOrch)
+				resultMA, runErr = multiagent.RunDeepAgent(taskCtx, h.config, &h.config.MultiAgent, h.agent, h.logger, conversationID, finalMessage, []agent.ChatMessage{}, roleTools, progressCallback, h.agentsMarkdownDir, batchOrch, nil)
 			case useEinoSingle:
 				if h.config == nil {
 					runErr = fmt.Errorf("服务器配置未加载")
 				} else {
-					resultMA, runErr = multiagent.RunEinoSingleChatModelAgent(taskCtx, h.config, &h.config.MultiAgent, h.agent, h.logger, conversationID, finalMessage, []agent.ChatMessage{}, roleTools, progressCallback)
+					resultMA, runErr = multiagent.RunEinoSingleChatModelAgent(taskCtx, h.config, &h.config.MultiAgent, h.agent, h.logger, conversationID, finalMessage, []agent.ChatMessage{}, roleTools, progressCallback, nil)
 				}
 			default:
 				result, runErr = h.agent.AgentLoopWithProgress(taskCtx, finalMessage, []agent.ChatMessage{}, conversationID, progressCallback, roleTools)
@@ -2768,17 +2759,7 @@ func (h *AgentHandler) executeBatchQueue(queueID string) {
 
 			// 更新助手消息内容
 			if assistantMessageID != "" {
-				mcpIDsJSON := ""
-				if len(mcpIDs) > 0 {
-					jsonData, _ := json.Marshal(mcpIDs)
-					mcpIDsJSON = string(jsonData)
-				}
-				if _, updateErr := h.db.Exec(
-					"UPDATE messages SET content = ?, mcp_execution_ids = ?, updated_at = ? WHERE id = ?",
-					resText,
-					mcpIDsJSON,
-					time.Now(), assistantMessageID,
-				); updateErr != nil {
+				if updateErr := h.db.UpdateAssistantMessageFinalize(assistantMessageID, resText, mcpIDs, multiagent.AggregatedReasoningFromTraceJSON(lastIn)); updateErr != nil {
 					h.logger.Warn("更新助手消息失败", zap.String("queueId", queueID), zap.String("taskId", task.ID), zap.Error(updateErr))
 					// 如果更新失败，尝试创建新消息
 					_, err = h.db.AddMessage(conversationID, "assistant", resText, mcpIDs)
@@ -2869,6 +2850,10 @@ func (h *AgentHandler) loadHistoryFromAgentTrace(conversationID string) ([]agent
 		// 解析content
 		if content, ok := msgMap["content"].(string); ok {
 			msg.Content = content
+		}
+		// DeepSeek 思考模式：含工具调用的 assistant 须在后续请求中回传 reasoning_content
+		if rc, ok := msgMap["reasoning_content"].(string); ok && strings.TrimSpace(rc) != "" {
+			msg.ReasoningContent = rc
 		}
 
 		// 解析tool_calls（如果存在）
@@ -2974,4 +2959,19 @@ func (h *AgentHandler) loadHistoryFromAgentTrace(conversationID string) ([]agent
 		zap.Bool("hasAssistantOut", assistantOut != ""),
 	)
 	return agentMessages, nil
+}
+
+// dbMessagesToAgentChatMessages maps DB rows to agent ChatMessage for history fallback
+// (includes reasoning_content for DeepSeek thinking + tool replay).
+func dbMessagesToAgentChatMessages(msgs []database.Message) []agent.ChatMessage {
+	out := make([]agent.ChatMessage, 0, len(msgs))
+	for i := range msgs {
+		m := msgs[i]
+		out = append(out, agent.ChatMessage{
+			Role:             m.Role,
+			Content:          m.Content,
+			ReasoningContent: m.ReasoningContent,
+		})
+	}
+	return out
 }

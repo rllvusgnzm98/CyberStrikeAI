@@ -196,6 +196,7 @@ func (h *AgentHandler) EinoSingleAgentLoopStream(c *gin.Context) {
 			curHistory,
 			roleTools,
 			progressCallback,
+			chatReasoningToClientIntent(req.Reasoning),
 		)
 		timeoutCancel()
 
@@ -297,18 +298,7 @@ func (h *AgentHandler) EinoSingleAgentLoopStream(c *gin.Context) {
 	}
 
 	if assistantMessageID != "" {
-		mcpIDsJSON := ""
-		if len(cumulativeMCPExecutionIDs) > 0 {
-			jsonData, _ := json.Marshal(cumulativeMCPExecutionIDs)
-			mcpIDsJSON = string(jsonData)
-		}
-		_, _ = h.db.Exec(
-			"UPDATE messages SET content = ?, mcp_execution_ids = ?, updated_at = ? WHERE id = ?",
-			result.Response,
-			mcpIDsJSON,
-			time.Now(),
-			assistantMessageID,
-		)
+		_ = h.db.UpdateAssistantMessageFinalize(assistantMessageID, result.Response, cumulativeMCPExecutionIDs, multiagent.AggregatedReasoningFromTraceJSON(result.LastAgentTraceInput))
 	}
 
 	if result.LastAgentTraceInput != "" || result.LastAgentTraceOutput != "" {
@@ -376,6 +366,7 @@ func (h *AgentHandler) EinoSingleAgentLoop(c *gin.Context) {
 		prep.History,
 		prep.RoleTools,
 		progressCallback,
+		chatReasoningToClientIntent(req.Reasoning),
 	)
 	if runErr != nil {
 		if shouldPersistEinoAgentTraceAfterRunError(baseCtx) {
@@ -386,18 +377,7 @@ func (h *AgentHandler) EinoSingleAgentLoop(c *gin.Context) {
 	}
 
 	if prep.AssistantMessageID != "" {
-		mcpIDsJSON := ""
-		if len(result.MCPExecutionIDs) > 0 {
-			jsonData, _ := json.Marshal(result.MCPExecutionIDs)
-			mcpIDsJSON = string(jsonData)
-		}
-		_, _ = h.db.Exec(
-			"UPDATE messages SET content = ?, mcp_execution_ids = ?, updated_at = ? WHERE id = ?",
-			result.Response,
-			mcpIDsJSON,
-			time.Now(),
-			prep.AssistantMessageID,
-		)
+		_ = h.db.UpdateAssistantMessageFinalize(prep.AssistantMessageID, result.Response, result.MCPExecutionIDs, multiagent.AggregatedReasoningFromTraceJSON(result.LastAgentTraceInput))
 	}
 	if result.LastAgentTraceInput != "" || result.LastAgentTraceOutput != "" {
 		_ = h.db.SaveAgentTrace(prep.ConversationID, result.LastAgentTraceInput, result.LastAgentTraceOutput)
