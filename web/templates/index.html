@@ -190,10 +190,12 @@
                     <!-- C2 侧栏入口（带子菜单） -->
                     <div class="nav-item nav-item-has-submenu" data-page="c2" id="nav-c2">
                         <div class="nav-item-content" data-title="C2" onclick="window.toggleSubmenu('c2')" data-i18n="nav.c2" data-i18n-attr="data-title" data-i18n-skip-text="true">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-                                <path d="M2 17l10 5 10-5"></path>
-                                <path d="M2 12l10 5 10-5"></path>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"></path>
+                                <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"></path>
+                                <circle cx="12" cy="12" r="2"></circle>
+                                <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"></path>
+                                <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19"></path>
                             </svg>
                             <span data-i18n="nav.c2">C2</span>
                             <svg class="submenu-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1606,11 +1608,13 @@
                             <div id="c2-main" class="c2-main">
                                 <div class="c2-welcome">
                                     <div class="c2-welcome-icon">
-                                        <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="url(#c2-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                        <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="url(#c2-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                             <defs><linearGradient id="c2-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00d4ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient></defs>
-                                            <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-                                            <path d="M2 17l10 5 10-5"></path>
-                                            <path d="M2 12l10 5 10-5"></path>
+                                            <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"></path>
+                                            <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"></path>
+                                            <circle cx="12" cy="12" r="2"></circle>
+                                            <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"></path>
+                                            <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19"></path>
                                         </svg>
                                     </div>
                                     <h3 data-i18n="c2.welcomeTitle">AI-Native C2 框架</h3>
