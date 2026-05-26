@@ -6,6 +6,7 @@ import (
 	"cyberstrike-ai/internal/agents"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/mcp/builtin"
+	"cyberstrike-ai/internal/project"
 )
 
 // DefaultPlanExecuteOrchestratorInstruction 当未配置 plan_execute 专用 Markdown / YAML 时的内置主代理（规划/重规划侧）提示。
@@ -108,7 +109,9 @@ func DefaultPlanExecuteOrchestratorInstruction() string {
 
 ## 项目黑板（事实）与漏洞记录（分离）
 
-绑定项目时会自动注入黑板索引（fact_key + 摘要）。**摘要不足必须 ` + builtin.ToolGetProjectFact + `(fact_key) 取 body，禁止臆造。** 环境认知用 ` + builtin.ToolUpsertProjectFact + `（key 如 target/primary_domain）；正式漏洞用 ` + builtin.ToolRecordVulnerability + `（记前可先 ` + builtin.ToolListVulnerabilities + ` 防重复，详情用 ` + builtin.ToolGetVulnerability + `）；二者可各记一次。误报用 ` + builtin.ToolDeprecateProjectFact + `。漏洞查询默认仅当前项目（未绑项目则仅当前会话）。
+绑定项目时会自动注入黑板索引（fact_key + 摘要）。**摘要不足必须 ` + builtin.ToolGetProjectFact + `(fact_key) 取 body，禁止臆造。** 环境认知用 ` + builtin.ToolUpsertProjectFact + `（key 如 target/primary_domain）；发现/利用上下文用 finding|chain|exploit|poc/ 前缀且 body 含完整攻击链与 POC；正式漏洞用 ` + builtin.ToolRecordVulnerability + `（记前可先 ` + builtin.ToolListVulnerabilities + ` 防重复，详情用 ` + builtin.ToolGetVulnerability + `）；二者可各记一次。误报用 ` + builtin.ToolDeprecateProjectFact + `。漏洞查询默认仅当前项目（未绑项目则仅当前会话）。
+
+` + project.FactRecordingGuidanceBlock() + `
 
 严重程度：critical / high / medium / low / info。证明须含足够证据。
 
@@ -206,7 +209,7 @@ func DefaultSupervisorOrchestratorInstruction() string {
 - **委派优先**：可独立封装、需要专项上下文的子目标（枚举、验证、归纳、报告素材）优先 transfer 给匹配子代理，并在委派说明中写清：子目标、约束、期望交付物结构、证据要求。
 - **亲自执行**：仅当无合适专家、需全局衔接或子代理结果不足时，由你直接调用工具。
 - **汇总**：子代理输出是证据来源；你要对齐矛盾、补全上下文，给出统一结论与可复现验证步骤，避免机械拼接。
-- **事实与漏洞**：环境认知用 ` + builtin.ToolUpsertProjectFact + `；正式漏洞用 ` + builtin.ToolRecordVulnerability + `，查询用 ` + builtin.ToolListVulnerabilities + ` / ` + builtin.ToolGetVulnerability + `；索引摘要不足时必须 ` + builtin.ToolGetProjectFact + ` 取详情。
+- **事实与漏洞**：环境认知用 ` + builtin.ToolUpsertProjectFact + `；发现/利用须用 finding|chain|exploit|poc/ 类 key 并在 body 写全攻击链与 POC；正式漏洞用 ` + builtin.ToolRecordVulnerability + `，查询用 ` + builtin.ToolListVulnerabilities + ` / ` + builtin.ToolGetVulnerability + `；索引摘要不足时必须 ` + builtin.ToolGetProjectFact + ` 取详情。
 
 ## transfer 交接与防重复劳动
 

@@ -10,6 +10,7 @@ import (
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/mcp/builtin"
+	"cyberstrike-ai/internal/project"
 
 	"go.uber.org/zap"
 )
@@ -46,27 +47,32 @@ func registerProjectFactTools(mcpServer *mcp.Server, db *database.DB, cfg *confi
 	}
 
 	upsertTool := mcp.Tool{
-		Name:             builtin.ToolUpsertProjectFact,
-		Description:      "写入或更新项目黑板事实。用于记录环境认知、目标信息、认证特征等（非正式漏洞条目）。同 fact_key 会覆盖更新。需要当前对话已绑定项目。",
-		ShortDescription: "写入/更新项目事实",
+		Name: builtin.ToolUpsertProjectFact,
+		Description: "写入或更新项目黑板事实，用于跨会话沉淀可复现上下文（非正式漏洞条目；可交付漏洞另用 record_vulnerability）。" +
+			"禁止仅写结论：summary 须含什么+在哪+如何验证；body 须含攻击链/请求响应/命令等复现细节。" +
+			"发现类建议 fact_key 为 finding|chain|exploit|poc/<slug>，category 对应 finding|chain|exploit|poc，body 按攻击链模板填写。" +
+			"环境类用 target|auth|infra|business/<slug>。同 fact_key 覆盖更新。需当前对话已绑定项目。",
+		ShortDescription: "写入/更新项目事实（含攻击链 body）",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"fact_key": map[string]interface{}{
 					"type":        "string",
-					"description": "项目内唯一 key，建议格式 category/slug，如 target/primary_domain",
+					"description": "项目内唯一 key：target/primary_domain、finding/sqli-login、exploit/upload-rce 等",
 				},
 				"category": map[string]interface{}{
 					"type":        "string",
-					"description": "分类：target、auth、infra、business、note 等",
+					"description": "target | auth | infra | business | finding | chain | exploit | poc | note",
+					"enum":        []string{"target", "auth", "infra", "business", "finding", "chain", "exploit", "poc", "note"},
 				},
 				"summary": map[string]interface{}{
 					"type":        "string",
-					"description": "单行摘要（会注入到后续对话索引）",
+					"description": "索引用一行：结论 + 位置 + 触发/验证要点（勿仅写「存在 XSS」等空话）",
 				},
 				"body": map[string]interface{}{
-					"type":        "string",
-					"description": "完整详情（POC、长文本等，仅 get_project_fact 返回）",
+					"type": "string",
+					"description": "完整可复现详情（仅 get_project_fact 返回）：须含攻击链步骤、原始 HTTP/命令、响应现象、证据与关联。" +
+						"发现/利用类必填；环境类建议含来源证据。攻击链类可参考模板章节：结论、目标与入口、攻击链、Exploit/POC、关键证据、关联、备注",
 				},
 				"confidence": map[string]interface{}{
 					"type":        "string",
@@ -116,7 +122,11 @@ func registerProjectFactTools(mcpServer *mcp.Server, db *database.DB, cfg *confi
 		if err != nil {
 			return textResult("错误: "+err.Error(), true), nil
 		}
-		return textResult(fmt.Sprintf("事实已保存。\nfact_key: %s\nid: %s\nconfidence: %s", created.FactKey, created.ID, created.Confidence), false), nil
+		msg := fmt.Sprintf("事实已保存。\nfact_key: %s\nid: %s\nconfidence: %s", created.FactKey, created.ID, created.Confidence)
+		if warn := project.SparseBodyWarningIfNeeded(f.Category, f.FactKey, f.Body); warn != "" {
+			msg += warn
+		}
+		return textResult(msg, false), nil
 	})
 
 	getTool := mcp.Tool{
@@ -144,8 +154,18 @@ func registerProjectFactTools(mcpServer *mcp.Server, db *database.DB, cfg *confi
 		if err != nil {
 			return textResult("错误: "+err.Error(), true), nil
 		}
-		msg := fmt.Sprintf("fact_key: %s\ncategory: %s\nconfidence: %s\nsummary: %s\nupdated_at: %s\n\n--- body ---\n%s",
-			f.FactKey, f.Category, f.Confidence, f.Summary, f.UpdatedAt.Format("2006-01-02 15:04:05"), f.Body)
+		msg := fmt.Sprintf("fact_key: %s\ncategory: %s\nconfidence: %s\nsummary: %s\nupdated_at: %s",
+			f.FactKey, f.Category, f.Confidence, f.Summary, f.UpdatedAt.Format("2006-01-02 15:04:05"))
+		if f.RelatedVulnerabilityID != "" {
+			msg += fmt.Sprintf("\nrelated_vulnerability_id: %s", f.RelatedVulnerabilityID)
+		}
+		if f.SourceConversationID != "" {
+			msg += fmt.Sprintf("\nsource_conversation_id: %s", f.SourceConversationID)
+		}
+		msg += "\n\n--- body ---\n" + f.Body
+		if warn := project.SparseBodyWarningIfNeeded(f.Category, f.FactKey, f.Body); warn != "" {
+			msg += warn
+		}
 		return textResult(msg, false), nil
 	})
 
