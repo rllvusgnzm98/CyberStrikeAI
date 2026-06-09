@@ -627,47 +627,6 @@
                                             <div class="dashboard-webshell-recent" id="dashboard-webshell-recent" hidden></div>
                                         </div>
                                     </section>
-                                    <section class="dashboard-section dashboard-section-overview">
-                                        <div class="dashboard-section-header">
-                                            <h3 class="dashboard-section-title" data-i18n="dashboard.batchQueues">批量任务队列</h3>
-                                            <a class="dashboard-section-link" onclick="switchPage('tasks')" data-i18n="dashboard.viewAll">查看全部 →</a>
-                                        </div>
-                                        <div class="dashboard-overview-list">
-                                            <div class="dashboard-overview-item dashboard-overview-item-batch" role="button" tabindex="0" onclick="switchPage('tasks')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchPage('tasks'); }">
-                                                <span class="dashboard-overview-icon dashboard-overview-icon-batch" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>
-                                                <div class="dashboard-overview-content">
-                                                    <div class="dashboard-overview-header">
-                                                        <span class="dashboard-overview-label" data-i18n="dashboard.batchQueues">批量任务队列</span>
-                                                        <span class="dashboard-overview-total" id="dashboard-batch-total">-</span>
-                                                    </div>
-                                                    <div class="dashboard-overview-stats">
-                                                        <span class="dashboard-overview-stat dashboard-overview-stat-pending">
-                                                            <span class="dashboard-overview-stat-badge badge-pending"></span>
-                                                            <span class="dashboard-overview-stat-value" id="dashboard-batch-pending">-</span>
-                                                            <span class="dashboard-overview-stat-label" data-i18n="dashboard.pending">待执行</span>
-                                                        </span>
-                                                        <span class="dashboard-overview-stat dashboard-overview-stat-running">
-                                                            <span class="dashboard-overview-stat-badge badge-running"></span>
-                                                            <span class="dashboard-overview-stat-value" id="dashboard-batch-running">-</span>
-                                                            <span class="dashboard-overview-stat-label" data-i18n="dashboard.executing">执行中</span>
-                                                        </span>
-                                                        <span class="dashboard-overview-stat dashboard-overview-stat-done">
-                                                            <span class="dashboard-overview-stat-badge badge-done"></span>
-                                                            <span class="dashboard-overview-stat-value" id="dashboard-batch-done">-</span>
-                                                            <span class="dashboard-overview-stat-label" data-i18n="dashboard.completed">已完成</span>
-                                                        </span>
-                                                    </div>
-                                                    <div class="dashboard-overview-progress">
-                                                        <div class="dashboard-overview-progress-bar">
-                                                            <div class="dashboard-overview-progress-segment dashboard-overview-progress-pending" id="dashboard-batch-progress-pending" style="width: 0%"></div>
-                                                            <div class="dashboard-overview-progress-segment dashboard-overview-progress-running" id="dashboard-batch-progress-running" style="width: 0%"></div>
-                                                            <div class="dashboard-overview-progress-segment dashboard-overview-progress-done" id="dashboard-batch-progress-done" style="width: 0%"></div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </section>
                                     <!-- 推荐操作：基于当前数据状态智能生成（如「修复 4 个待处理严重漏洞」「审批 2 个 HITL」），
                                          比纯静态导航更有意义；当没有任何推荐时整个 section 隐藏 -->
                                     <section class="dashboard-section dashboard-section-recommend" id="dashboard-section-recommend" hidden>
@@ -679,6 +638,36 @@
                                     </section>
                                 </div>
                                 <div class="dashboard-side">
+                                    <section class="dashboard-section dashboard-section-batch-side">
+                                        <div class="dashboard-section-header">
+                                            <h3 class="dashboard-section-title" data-i18n="dashboard.batchQueues">批量任务队列</h3>
+                                            <a class="dashboard-section-link" onclick="switchPage('tasks')" data-i18n="dashboard.viewAll">查看全部 →</a>
+                                        </div>
+                                        <div class="dashboard-batch-side-body" role="button" tabindex="0" onclick="switchPage('tasks')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchPage('tasks'); }">
+                                            <div class="dashboard-batch-side-total" id="dashboard-batch-total">-</div>
+                                            <div class="dashboard-batch-side-stats">
+                                                <div class="dashboard-batch-side-stat dashboard-batch-side-stat--pending">
+                                                    <span class="dashboard-batch-side-stat-value" id="dashboard-batch-pending">-</span>
+                                                    <span class="dashboard-batch-side-stat-label" data-i18n="dashboard.pending">待执行</span>
+                                                </div>
+                                                <div class="dashboard-batch-side-stat dashboard-batch-side-stat--running">
+                                                    <span class="dashboard-batch-side-stat-value" id="dashboard-batch-running">-</span>
+                                                    <span class="dashboard-batch-side-stat-label" data-i18n="dashboard.executing">执行中</span>
+                                                </div>
+                                                <div class="dashboard-batch-side-stat dashboard-batch-side-stat--done">
+                                                    <span class="dashboard-batch-side-stat-value" id="dashboard-batch-done">-</span>
+                                                    <span class="dashboard-batch-side-stat-label" data-i18n="dashboard.completed">已完成</span>
+                                                </div>
+                                            </div>
+                                            <div class="dashboard-batch-side-progress" aria-hidden="true">
+                                                <div class="dashboard-batch-side-progress-bar">
+                                                    <div class="dashboard-batch-side-progress-segment dashboard-batch-side-progress-pending" id="dashboard-batch-progress-pending" style="width: 0%"></div>
+                                                    <div class="dashboard-batch-side-progress-segment dashboard-batch-side-progress-running" id="dashboard-batch-progress-running" style="width: 0%"></div>
+                                                    <div class="dashboard-batch-side-progress-segment dashboard-batch-side-progress-done" id="dashboard-batch-progress-done" style="width: 0%"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
                                     <section class="dashboard-section dashboard-section-tools">
                                         <div class="dashboard-section-header">
                                             <h3 class="dashboard-section-title" data-i18n="dashboard.toolsExecCount">工具执行次数</h3>

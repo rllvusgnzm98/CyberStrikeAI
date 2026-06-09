@@ -15998,6 +15998,95 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     gap: 24px;
 }
 
+/* 侧栏：批量任务队列（窄栏专用布局） */
+.dashboard-section-batch-side .dashboard-section-header {
+    margin-bottom: 12px;
+}
+
+.dashboard-batch-side-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    cursor: pointer;
+    border-radius: 10px;
+    transition: background 0.2s ease;
+}
+
+.dashboard-batch-side-body:hover {
+    background: rgba(0, 102, 255, 0.03);
+}
+
+.dashboard-batch-side-body:focus-visible {
+    outline: 2px solid rgba(0, 102, 255, 0.45);
+    outline-offset: 2px;
+}
+
+.dashboard-batch-side-total {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.dashboard-batch-side-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.dashboard-batch-side-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 6px;
+    border-radius: 8px;
+    background: #f8fafc;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    border-top-width: 3px;
+}
+
+.dashboard-batch-side-stat--pending { border-top-color: #f59e0b; }
+.dashboard-batch-side-stat--running { border-top-color: #3b82f6; }
+.dashboard-batch-side-stat--done    { border-top-color: #10b981; }
+
+.dashboard-batch-side-stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.dashboard-batch-side-stat-label {
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.dashboard-batch-side-progress-bar {
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+}
+
+.dashboard-batch-side-progress-segment {
+    height: 100%;
+    transition: width 0.4s ease;
+    min-width: 0;
+}
+
+.dashboard-batch-side-progress-pending { background: #f59e0b; }
+.dashboard-batch-side-progress-running { background: #3b82f6; }
+.dashboard-batch-side-progress-done    { background: #10b981; }
+
+.dashboard-side .dashboard-section-tools .dashboard-tools-chart-wrap {
+    max-height: 280px;
+    overflow-y: auto;
+}
+
 .dashboard-grid .dashboard-section {
     margin-bottom: 0;
     background: rgba(255, 255, 255, 0.95);
