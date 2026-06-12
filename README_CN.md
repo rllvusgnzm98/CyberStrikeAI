@@ -188,15 +188,21 @@ chmod +x run.sh && ./run.sh
      ```
    - 或启动前直接编辑 `config.yaml` 文件
 2. **登录系统** - 使用控制台显示的自动生成密码（或在 `config.yaml` 中设置 `auth.password`）
-3. **安装安全工具（可选）** - 一键安装 `tools/` 目录声明的全部工具：
+3. **安装安全工具（可选）** - 按需安装 `tools/` 目录中的工具；未安装的工具在执行时会自动跳过或改用替代方案。常用示例：
+
+   **macOS（Homebrew）：**
    ```bash
-   ./install-tools.sh              # 安装缺失工具 (Kali/Debian/Ubuntu 推荐)
-   ./install-tools.sh --check      # 仅检查, 不安装
-   ./install-tools.sh --list       # 列出各工具安装状态
-   ./install-tools.sh --only nmap,gau   # 只装指定工具
+   brew install nmap masscan sqlmap nikto gobuster ffuf hydra hashcat nuclei subfinder
    ```
-   macOS 自带 bash 3.2, 请用 `./install-tools.sh --install-bash --list` 自动安装 bash 4+; apt 不可用时会降级到 pip/go/GitHub。
-   未安装的工具在执行时会自动跳过或改用替代方案。
+
+   **Linux（Kali / Debian / Ubuntu）：**
+   ```bash
+   sudo apt update
+   sudo apt install -y nmap masscan sqlmap nikto gobuster hydra hashcat john binwalk
+   # 部分发行版需自行安装：ffuf、nuclei、subfinder 等可用 go install 或见各工具官网
+   ```
+
+   完整工具列表见 `tools/` 目录；各工具安装方式以官方文档为准。
 
 **其他启动方式：**
 ```bash

@@ -189,15 +189,21 @@ The `run.sh` script will automatically:
      ```
    - Or edit `config.yaml` directly before launching
 2. **Login** - Use the auto-generated password shown in the console (or set `auth.password` in `config.yaml`)
-3. **Install security tools (optional)** - Install all tools declared under `tools/`:
+3. **Install security tools (optional)** - Install tools from `tools/` as needed; missing tools are skipped or substituted at runtime. Common examples:
+
+   **macOS (Homebrew):**
    ```bash
-   ./install-tools.sh              # install missing tools (best on Kali/Debian/Ubuntu)
-   ./install-tools.sh --check      # check only, no install
-   ./install-tools.sh --list       # show per-tool status
-   ./install-tools.sh --only nmap,gau   # install selected tools only
+   brew install nmap masscan sqlmap nikto gobuster ffuf hydra hashcat nuclei subfinder
    ```
-   On macOS, install bash 4+ via Homebrew first; without apt, the script falls back to pip/go/GitHub.
-   AI automatically falls back to alternatives when a tool is missing.
+
+   **Linux (Kali / Debian / Ubuntu):**
+   ```bash
+   sudo apt update
+   sudo apt install -y nmap masscan sqlmap nikto gobuster hydra hashcat john binwalk
+   # On some distros, install ffuf/nuclei/subfinder via go install or upstream docs
+   ```
+
+   See the `tools/` directory for the full list; refer to each tool's official docs for install details.
 
 **Alternative Launch Methods:**
 ```bash
