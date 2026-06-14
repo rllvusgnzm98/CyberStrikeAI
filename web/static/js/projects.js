@@ -12,6 +12,7 @@ let _projectsFetchPromise = null;
 
 const PROJECT_ACTIVE_KEY = 'cyberstrike.activeProjectId';
 const PROJECT_DESCRIPTION_MAX_LENGTH = 4000;
+const PROJECT_NAME_MAX_LENGTH = 200;
 
 function tp(key, opts) {
     if (typeof window.t === 'function') return window.t(key, opts);
@@ -878,38 +879,52 @@ let _factDetailFact = null;
 let _projectFactsFilterDebounce = null;
 
 async function viewProjectFactBody(factKey) {
-    const res = await apiFetch(`/api/projects/${currentProjectId}/facts?fact_key=${encodeURIComponent(factKey)}`);
-    if (!res.ok) return alert(tp('common.loadFailed'));
-    const f = await res.json();
-    _factDetailKey = f.fact_key;
-    _factDetailFact = f;
-    document.getElementById('fact-detail-title').textContent = `[${f.fact_key}]`;
-    const metaParts = [
-        tpFmt('projects.factMetaCategory', `Category: ${f.category}`, { value: f.category }),
-        tpFmt('projects.factMetaConfidence', `Confidence: ${f.confidence}`, { value: f.confidence }),
-        tpFmt('projects.factMetaUpdated', `Updated: ${formatProjectTime(f.updated_at, f.created_at)}`, {
-            time: formatProjectTime(f.updated_at, f.created_at),
-        }),
-    ];
-    if (f.related_vulnerability_id) metaParts.push(tpFmt('projects.factMetaRelatedVuln', `Related vulnerability: ${f.related_vulnerability_id}`, { value: f.related_vulnerability_id }));
-    if (f.source_conversation_id) metaParts.push(tpFmt('projects.factMetaSourceConversation', `Source conversation: ${f.source_conversation_id}`, { value: f.source_conversation_id }));
-    document.getElementById('fact-detail-meta').textContent = metaParts.join(' · ');
-    document.getElementById('fact-detail-body').textContent = f.body || tp('projects.emptyBody');
+    document.getElementById('fact-detail-title').textContent = factKey;
+    document.getElementById('fact-detail-meta').textContent = '…';
+    document.getElementById('fact-detail-body').textContent = '';
     const warnEl = document.getElementById('fact-detail-sparse-warn');
     if (warnEl) {
-        if (isSparseFactBody(f.category, f.fact_key, f.body)) {
-            warnEl.hidden = false;
-            warnEl.textContent = tp('projects.factSparseWarn');
-        } else {
-            warnEl.hidden = true;
-            warnEl.textContent = '';
-        }
+        warnEl.hidden = true;
+        warnEl.textContent = '';
     }
     const linkBtn = document.getElementById('fact-detail-link-vuln-btn');
     const createBtn = document.getElementById('fact-detail-create-vuln-btn');
-    if (linkBtn) linkBtn.hidden = false;
-    if (createBtn) createBtn.hidden = false;
-    openProjectsOverlay('fact-detail-modal');
+    if (linkBtn) linkBtn.hidden = true;
+    if (createBtn) createBtn.hidden = true;
+    openProjectsOverlay('fact-detail-modal', { focus: false });
+    const res = await apiFetch(`/api/projects/${currentProjectId}/facts?fact_key=${encodeURIComponent(factKey)}`);
+    if (!res.ok) {
+        closeFactDetailModal();
+        return alert(tp('common.loadFailed'));
+    }
+    const f = await res.json();
+    _factDetailKey = f.fact_key;
+    _factDetailFact = f;
+    deferModalContent(() => {
+        document.getElementById('fact-detail-title').textContent = `[${f.fact_key}]`;
+        const metaParts = [
+            tpFmt('projects.factMetaCategory', `Category: ${f.category}`, { value: f.category }),
+            tpFmt('projects.factMetaConfidence', `Confidence: ${f.confidence}`, { value: f.confidence }),
+            tpFmt('projects.factMetaUpdated', `Updated: ${formatProjectTime(f.updated_at, f.created_at)}`, {
+                time: formatProjectTime(f.updated_at, f.created_at),
+            }),
+        ];
+        if (f.related_vulnerability_id) metaParts.push(tpFmt('projects.factMetaRelatedVuln', `Related vulnerability: ${f.related_vulnerability_id}`, { value: f.related_vulnerability_id }));
+        if (f.source_conversation_id) metaParts.push(tpFmt('projects.factMetaSourceConversation', `Source conversation: ${f.source_conversation_id}`, { value: f.source_conversation_id }));
+        document.getElementById('fact-detail-meta').textContent = metaParts.join(' · ');
+        document.getElementById('fact-detail-body').textContent = f.body || tp('projects.emptyBody');
+        if (warnEl) {
+            if (isSparseFactBody(f.category, f.fact_key, f.body)) {
+                warnEl.hidden = false;
+                warnEl.textContent = tp('projects.factSparseWarn');
+            } else {
+                warnEl.hidden = true;
+                warnEl.textContent = '';
+            }
+        }
+        if (linkBtn) linkBtn.hidden = false;
+        if (createBtn) createBtn.hidden = false;
+    });
 }
 
 function editFactFromDetail() {
@@ -1164,41 +1179,16 @@ async function viewFactsForVulnerability(vulnId) {
     else loadProjectFacts();
 }
 
-function openProjectsOverlay(id) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.style.display = 'flex';
-    syncProjectsModalBodyLock();
-    const focusTarget = el.querySelector('input.form-input, textarea.form-input, select.form-input');
-    if (focusTarget) {
-        setTimeout(() => focusTarget.focus(), 80);
-    }
+function openProjectsOverlay(id, opts) {
+    openAppModal(id, opts);
 }
 
 function isProjectsOverlayVisible(id) {
-    const el = document.getElementById(id);
-    if (!el) return false;
-    const style = window.getComputedStyle(el);
-    return style.display !== 'none' && style.visibility !== 'hidden';
-}
-
-function hasVisibleProjectsOverlay() {
-    const overlays = document.querySelectorAll('.projects-modal-overlay');
-    return Array.from(overlays).some((el) => {
-        const style = window.getComputedStyle(el);
-        return style.display !== 'none' && style.visibility !== 'hidden';
-    });
-}
-
-function syncProjectsModalBodyLock() {
-    if (hasVisibleProjectsOverlay()) document.body.classList.add('projects-modal-open');
-    else document.body.classList.remove('projects-modal-open');
+    return isAppModalOpen(id);
 }
 
 function closeProjectsOverlay(id) {
-    const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
-    syncProjectsModalBodyLock();
+    closeAppModal(id);
 }
 
 function showNewProjectModal() {
@@ -1222,6 +1212,11 @@ async function showEditProjectModal(projectId) {
     if (sub) sub.textContent = tp('projects.modalEditSubtitle');
     const submitBtn = document.getElementById('project-modal-submit-btn');
     if (submitBtn) submitBtn.textContent = tp('projects.saveChanges');
+    const nameEl = document.getElementById('project-modal-name');
+    const descEl = document.getElementById('project-modal-description');
+    if (nameEl) nameEl.value = '';
+    if (descEl) descEl.value = '';
+    openProjectsOverlay('project-modal', { focus: false });
     let p = findProjectById(projectId);
     if (!p) {
         try {
@@ -1229,15 +1224,19 @@ async function showEditProjectModal(projectId) {
             if (!res.ok) throw new Error(tp('projects.projectNotFound'));
             p = await res.json();
         } catch (e) {
+            closeProjectModal();
             alert(e.message || tp('projects.projectNotFound'));
             window._projectModalEditId = null;
             return;
         }
     }
-    document.getElementById('project-modal-name').value = p.name || '';
-    document.getElementById('project-modal-description').value = p.description || '';
-    openProjectsOverlay('project-modal');
-    setTimeout(() => document.getElementById('project-modal-name')?.focus(), 0);
+    const name = (p.name || '').slice(0, PROJECT_NAME_MAX_LENGTH);
+    const description = clampProjectDescription(p.description || '');
+    deferModalContent(() => {
+        if (nameEl) nameEl.value = name;
+        if (descEl) descEl.value = description;
+        nameEl?.focus();
+    });
 }
 
 /** 从对话区「选择项目」面板打开新建项目，创建成功后自动绑定当前对话 */
@@ -1248,7 +1247,7 @@ function showNewProjectModalFromChat() {
 }
 
 async function saveProjectModal() {
-    const name = document.getElementById('project-modal-name').value.trim();
+    const name = document.getElementById('project-modal-name').value.trim().slice(0, PROJECT_NAME_MAX_LENGTH);
     if (!name) return alert(tp('projects.enterProjectName'));
     const body = {
         name,
@@ -1541,14 +1540,20 @@ function showAddFactModal() {
 
 async function showEditFactModal(factKey) {
     if (!currentProjectId) return alert(tp('projects.selectProjectFirst'));
+    resetFactModalForm();
+    openProjectsOverlay('fact-modal', { focus: false });
     const res = await apiFetch(
         `/api/projects/${currentProjectId}/facts?fact_key=${encodeURIComponent(factKey)}`,
     );
-    if (!res.ok) return alert(tp('projects.loadFactFailed'));
+    if (!res.ok) {
+        closeFactModal();
+        return alert(tp('projects.loadFactFailed'));
+    }
     const f = await res.json();
-    resetFactModalForm();
-    fillFactModalForm(f);
-    openProjectsOverlay('fact-modal');
+    deferModalContent(() => {
+        fillFactModalForm(f);
+        document.getElementById('fact-modal-key')?.focus();
+    });
 }
 
 function closeFactModal() {

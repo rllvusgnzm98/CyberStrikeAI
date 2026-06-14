@@ -40,7 +40,7 @@ function shouldSkipSkillsAutoRefresh() {
     }
 
     const modal = document.getElementById('skill-modal');
-    if (modal && modal.style.display === 'flex') {
+    if (modal && isAppModalOpen('skill-modal')) {
         return true;
     }
 
@@ -465,7 +465,7 @@ function showAddSkillModal() {
     const addTa = document.getElementById('skill-content-add');
     if (addTa) addTa.value = '';
 
-    modal.style.display = 'flex';
+    openAppModal('skill-modal');
 }
 
 function skillPackagePathDepth(path) {
@@ -555,6 +555,22 @@ async function selectSkillPackageFile(skillId, path, opts) {
 // 编辑skill
 async function editSkill(skillId) {
     wireSkillModalOnce();
+    const modal = document.getElementById('skill-modal');
+    if (!modal) return;
+    skillModalAddMode = false;
+    skillFileDirty = false;
+    skillActivePath = 'SKILL.md';
+    const pkg = document.getElementById('skill-package-editor');
+    const addEd = document.getElementById('skill-add-editor');
+    if (pkg) pkg.style.display = 'block';
+    if (addEd) addEd.style.display = 'none';
+    document.getElementById('skill-modal-title').textContent = _t('skills.editSkill');
+    document.getElementById('skill-name').value = '';
+    document.getElementById('skill-name').disabled = true;
+    document.getElementById('skill-description').value = '';
+    const ta = document.getElementById('skill-content');
+    if (ta) ta.value = '';
+    openAppModal('skill-modal', { focus: false });
     try {
         const [detailRes, filesRes] = await Promise.all([
             apiFetch(`/api/skills/${encodeURIComponent(skillId)}?depth=full`),
@@ -565,39 +581,24 @@ async function editSkill(skillId) {
         }
         const data = await detailRes.json();
         const skill = data.skill;
-
-        const modal = document.getElementById('skill-modal');
-        if (!modal) return;
-
-        skillModalAddMode = false;
-        skillFileDirty = false;
-        skillActivePath = 'SKILL.md';
-        const pkg = document.getElementById('skill-package-editor');
-        const addEd = document.getElementById('skill-add-editor');
-        if (pkg) pkg.style.display = 'block';
-        if (addEd) addEd.style.display = 'none';
-
-        document.getElementById('skill-modal-title').textContent = _t('skills.editSkill');
-        document.getElementById('skill-name').value = skill.id || skillId;
-        document.getElementById('skill-name').disabled = true;
-        document.getElementById('skill-description').value = skill.description || '';
-
+        let files = [];
         if (filesRes.ok) {
             const fd = await filesRes.json();
-            skillPackageFiles = fd.files || [];
-        } else {
-            skillPackageFiles = [];
+            files = fd.files || [];
         }
-        renderSkillPackageTree();
-
-        const ta = document.getElementById('skill-content');
-        if (ta) ta.value = skill.content || '';
-        const hint = document.getElementById('skill-body-hint-edit');
-        if (hint) hint.style.display = 'block';
-
         currentEditingSkillName = skillId;
-        modal.style.display = 'flex';
+        deferModalContent(() => {
+            document.getElementById('skill-name').value = skill.id || skillId;
+            document.getElementById('skill-description').value = skill.description || '';
+            skillPackageFiles = files;
+            renderSkillPackageTree();
+            if (ta) ta.value = skill.content || '';
+            const hint = document.getElementById('skill-body-hint-edit');
+            if (hint) hint.style.display = 'block';
+            document.getElementById('skill-name')?.focus();
+        });
     } catch (error) {
+        closeSkillModal();
         console.error('加载skill详情失败:', error);
         showNotification(_t('skills.loadDetailFailed') + ': ' + error.message, 'error');
     }
@@ -659,7 +660,7 @@ async function viewSkill(skillId) {
             </div>
         `;
         document.body.appendChild(modal);
-        modal.style.display = 'flex';
+        openAppModal(modal);
 
         const close = () => closeSkillViewModal();
         modal.querySelectorAll('[data-skill-view-close]').forEach(el => el.addEventListener('click', close));
@@ -691,23 +692,22 @@ async function viewSkill(skillId) {
 
 // 关闭查看模态框
 function closeSkillViewModal() {
+    closeAppModal('skill-view-modal');
     const modal = document.getElementById('skill-view-modal');
     if (modal) {
         modal.remove();
+        syncAppModalBodyLock();
     }
 }
 
 // 关闭skill模态框
 function closeSkillModal() {
-    const modal = document.getElementById('skill-modal');
-    if (modal) {
-        modal.style.display = 'none';
-        currentEditingSkillName = null;
-        skillModalAddMode = true;
-        skillFileDirty = false;
-        skillPackageFiles = [];
-        skillActivePath = 'SKILL.md';
-    }
+    closeAppModal('skill-modal');
+    currentEditingSkillName = null;
+    skillModalAddMode = true;
+    skillFileDirty = false;
+    skillPackageFiles = [];
+    skillActivePath = 'SKILL.md';
 }
 
 // 保存skill

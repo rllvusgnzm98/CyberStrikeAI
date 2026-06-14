@@ -2535,10 +2535,17 @@ async function batchUpdateButtonToolNames(buttonsContainer, executionIds) {
 // 显示MCP调用详情
 async function showMCPDetail(executionId) {
     try {
+        openAppModal('mcp-detail-modal', { focus: false });
         const response = await apiFetch(`/api/monitor/execution/${executionId}`);
         const exec = await response.json();
-        
-        if (response.ok) {
+
+        if (!response.ok) {
+            closeMCPDetail();
+            alert((typeof window.t === 'function' ? window.t('mcpDetailModal.getDetailFailed') : '获取详情失败') + ': ' + (exec.error || (typeof window.t === 'function' ? window.t('mcpDetailModal.unknown') : '未知错误')));
+            return;
+        }
+
+        deferModalContent(function () {
             // 填充模态框内容
             document.getElementById('detail-tool-name').textContent = exec.toolName || (typeof window.t === 'function' ? window.t('mcpDetailModal.unknown') : 'Unknown');
             document.getElementById('detail-execution-id').textContent = exec.id || 'N/A';
@@ -2645,20 +2652,16 @@ async function showMCPDetail(executionId) {
                     delete abortBtn.dataset.execId;
                 }
             }
-            
-            // 显示模态框
-            document.getElementById('mcp-detail-modal').style.display = 'block';
-        } else {
-            alert((typeof window.t === 'function' ? window.t('mcpDetailModal.getDetailFailed') : '获取详情失败') + ': ' + (exec.error || (typeof window.t === 'function' ? window.t('mcpDetailModal.unknown') : '未知错误')));
-        }
+        });
     } catch (error) {
+        closeMCPDetail();
         alert((typeof window.t === 'function' ? window.t('mcpDetailModal.getDetailFailed') : '获取详情失败') + ': ' + error.message);
     }
 }
 
 // 关闭MCP详情模态框
 function closeMCPDetail() {
-    document.getElementById('mcp-detail-modal').style.display = 'none';
+    closeAppModal('mcp-detail-modal');
 }
 
 /** 从详情模态框触发：取消当前进行中的 MCP 工具调用 */
@@ -2682,18 +2685,12 @@ function openMcpToolAbortModal(executionId, options = {}) {
     if (ta) {
         ta.value = '';
     }
-    const m = document.getElementById('mcp-tool-abort-modal');
-    if (m) {
-        m.style.display = 'block';
-    }
+    openAppModal('mcp-tool-abort-modal');
 }
 
 function closeMcpToolAbortModal() {
     window.__mcpToolAbortContext = null;
-    const m = document.getElementById('mcp-tool-abort-modal');
-    if (m) {
-        m.style.display = 'none';
-    }
+    closeAppModal('mcp-tool-abort-modal');
 }
 
 async function submitMcpToolAbortModal() {
@@ -3125,7 +3122,7 @@ async function loadConversation(conversationId) {
         
         // 如果攻击链模态框打开且显示的不是当前对话，关闭它
         const attackChainModal = document.getElementById('attack-chain-modal');
-        if (attackChainModal && attackChainModal.style.display === 'block') {
+        if (attackChainModal && isAppModalOpen('attack-chain-modal')) {
             if (currentAttackChainConversationId !== conversationId) {
                 closeAttackChainModal();
             }
@@ -3415,7 +3412,7 @@ async function deleteConversation(conversationId, skipConfirm = false) {
 
         // 批量管理弹窗打开时，同步刷新弹窗内列表
         const batchModal = document.getElementById('batch-manage-modal');
-        if (batchModal && batchModal.style.display === 'flex') {
+        if (batchModal && isAppModalOpen('batch-manage-modal')) {
             allConversationsForBatch = allConversationsForBatch.filter(c => c.id !== conversationId);
             updateBatchManageTitle(allConversationsForBatch.length);
             const searchInput = document.getElementById('batch-search-input');
@@ -3522,7 +3519,7 @@ async function showAttackChain(conversationId) {
     if (isAttackChainLoading(conversationId) && currentAttackChainConversationId === conversationId) {
         // 如果模态框已经打开且显示的是同一个对话，不重复打开
         const modal = document.getElementById('attack-chain-modal');
-        if (modal && modal.style.display === 'block') {
+        if (modal && isAppModalOpen('attack-chain-modal')) {
             console.log('攻击链正在加载中，模态框已打开');
             return;
         }
@@ -3535,8 +3532,7 @@ async function showAttackChain(conversationId) {
         return;
     }
     
-    modal.style.display = 'block';
-    // 打开时立即按当前语言刷新统计（避免红框内仍显示硬编码中文）
+    openAppModal('attack-chain-modal', { focus: false });
     updateAttackChainStats({ nodes: [], edges: [] });
 
     // 清空容器
@@ -4668,10 +4664,7 @@ function closeNodeDetails() {
 
 // 关闭攻击链模态框
 function closeAttackChainModal() {
-    const modal = document.getElementById('attack-chain-modal');
-    if (modal) {
-        modal.style.display = 'none';
-    }
+    closeAppModal('attack-chain-modal');
     
     // 关闭节点详情
     closeNodeDetails();
@@ -7214,19 +7207,14 @@ async function showBatchManageModal() {
         updateBatchManageTitle(allConversationsForBatch.length);
 
         renderBatchConversations();
-        if (modal) {
-            modal.style.display = 'flex';
-        }
+        openAppModal('batch-manage-modal');
     } catch (error) {
         console.error('加载对话列表失败:', error);
         // 错误时使用空数组，不显示错误提示（更友好的用户体验）
         allConversationsForBatch = [];
-        const modal = document.getElementById('batch-manage-modal');
         updateBatchManageTitle(0);
-        if (modal) {
-            renderBatchConversations();
-            modal.style.display = 'flex';
-        }
+        renderBatchConversations();
+        openAppModal('batch-manage-modal');
     }
 }
 
@@ -7381,10 +7369,7 @@ async function deleteSelectedConversations() {
 
 // 关闭批量管理模态框
 function closeBatchManageModal() {
-    const modal = document.getElementById('batch-manage-modal');
-    if (modal) {
-        modal.style.display = 'none';
-    }
+    closeAppModal('batch-manage-modal');
     const selectAll = document.getElementById('batch-select-all');
     if (selectAll) {
         selectAll.checked = false;
@@ -7424,8 +7409,7 @@ function refreshChatPanelI18n() {
         });
     }
 
-    const mcpModal = document.getElementById('mcp-detail-modal');
-    if (mcpModal && mcpModal.style.display === 'block') {
+    if (isAppModalOpen('mcp-detail-modal')) {
         const detailTimeEl = document.getElementById('detail-time');
         if (detailTimeEl && detailTimeEl.dataset.detailTimeIso) {
             try {
@@ -7447,7 +7431,7 @@ document.addEventListener('languagechange', function () {
     refreshSystemReadyMessageBubbles();
     refreshChatPanelI18n();
     const modal = document.getElementById('batch-manage-modal');
-    if (modal && modal.style.display === 'flex') {
+    if (isAppModalOpen('batch-manage-modal')) {
         updateBatchManageTitle(allConversationsForBatch.length);
     }
     // 侧边栏最近对话等列表的时间戳会随语言变化（24h/12h 等），重新拉列表以统一格式
@@ -7482,20 +7466,14 @@ function showCreateGroupModal(andMoveConversation = false) {
         iconPicker.style.display = 'none';
     }
     if (modal) {
-        modal.style.display = 'flex';
+        openAppModal('create-group-modal', { focusEl: input });
         modal.dataset.moveConversation = andMoveConversation ? 'true' : 'false';
-        if (input) {
-            setTimeout(() => input.focus(), 100);
-        }
     }
 }
 
 // 关闭创建分组模态框
 function closeCreateGroupModal() {
-    const modal = document.getElementById('create-group-modal');
-    if (modal) {
-        modal.style.display = 'none';
-    }
+    closeAppModal('create-group-modal');
     const input = document.getElementById('create-group-name-input');
     if (input) {
         input.value = '';

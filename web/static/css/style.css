@@ -3326,9 +3326,9 @@ header {
     top: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.6);
+    background-color: rgba(15, 23, 42, 0.52);
     overflow: auto;
-    animation: fadeIn 0.2s ease-in;
+    animation: fadeIn 0.15s ease-out;
 }
 
 .modal-content {
@@ -3343,8 +3343,9 @@ header {
     flex-direction: column;
     box-shadow: var(--shadow-lg);
     border: 1px solid var(--border-color);
-    animation: slideDown 0.3s ease-out;
+    animation: slideDown 0.18s ease-out;
     overflow: hidden;
+    contain: layout style paint;
 }
 
 @keyframes slideDown {
@@ -19374,6 +19375,8 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     position: relative;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .role-selection-item-main:hover {
@@ -19436,11 +19439,19 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     margin: 0;
     transition: color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     letter-spacing: -0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: anywhere;
 }
 
 .role-selection-item-main.selected .role-selection-item-name-main {
     color: #6a1bb2;
     font-weight: 600;
+}
+
+.role-selection-item-main.selected .role-selection-item-content-main {
+    padding-right: 24px;
 }
 
 .role-selection-item-description-main {
@@ -23777,10 +23788,8 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
     justify-content: center;
     padding: 24px 16px;
     box-sizing: border-box;
-    background: rgba(15, 23, 42, 0.45);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    animation: projectsOverlayIn 0.2s ease-out;
+    background: rgba(15, 23, 42, 0.52);
+    animation: projectsOverlayIn 0.15s ease-out;
 }
 @keyframes projectsOverlayIn {
     from { opacity: 0; }
@@ -23798,7 +23807,8 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
         0 24px 48px rgba(15, 23, 42, 0.18),
         0 0 0 1px rgba(15, 23, 42, 0.06);
     overflow: hidden;
-    animation: projectsDialogIn 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    animation: projectsDialogIn 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+    contain: layout style paint;
 }
 .projects-modal-dialog--wide {
     max-width: 640px;
@@ -23859,6 +23869,13 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
     padding: 10px 12px;
     font-size: 0.875rem;
     transition: border-color 0.15s, box-shadow 0.15s;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+#project-modal-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .projects-modal-body .form-input:focus {
     outline: none;
@@ -23882,7 +23899,8 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
 .projects-modal-footer .btn-primary {
     min-width: 100px;
 }
-body.projects-modal-open {
+body.projects-modal-open,
+body.app-modal-open {
     overflow: hidden;
 }
 .fact-detail-prev-wrap {
@@ -24030,8 +24048,11 @@ body.projects-modal-open {
 /* 对话区项目选择器（与角色/代理模式共用 role-selector-*） */
 .project-selector-wrapper .role-selector-text {
     max-width: 108px;
+    min-width: 0;
+    flex-shrink: 1;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .chat-project-panel {
     width: 280px;
@@ -24051,6 +24072,7 @@ body.projects-modal-open {
     padding-right: 0;
     margin: 0;
     width: 100%;
+    overflow-x: hidden;
 }
 .chat-project-panel .role-selection-item-main {
     width: 100%;

@@ -914,18 +914,14 @@ async function showBatchImportModal() {
             }
         }
         await refreshBatchProjectSelectOptions();
-        
-        modal.style.display = 'block';
-        input.focus();
+
+        openAppModal('batch-import-modal', { focusEl: input });
     }
 }
 
 // 关闭新建任务模态框
 function closeBatchImportModal() {
-    const modal = document.getElementById('batch-import-modal');
-    if (modal) {
-        modal.style.display = 'none';
-    }
+    closeAppModal('batch-import-modal');
 }
 
 function handleBatchScheduleModeChange() {
@@ -1350,7 +1346,13 @@ async function showBatchQueueDetail(queueId) {
         const addTaskBtn = document.getElementById('batch-queue-add-task-btn');
         
         if (!modal || !content) return;
-        
+
+        const alreadyOpen = isAppModalOpen('batch-queue-detail-modal');
+        if (!alreadyOpen) {
+            if (content) content.innerHTML = '<p style="color:#64748b;margin:0;">…</p>';
+            openAppModal('batch-queue-detail-modal', { focus: false });
+        }
+
         try {
         // 加载角色列表（如果还未加载）
         let loadedRoles = [];
@@ -1459,6 +1461,7 @@ async function showBatchQueueDetail(queueId) {
         const sameQueueAsBefore = prevDetailFor === queue.id;
         const savedTechDetailsOpen = sameQueueAsBefore && !!(prevTechDetails && prevTechDetails.open);
 
+        deferModalContent(function () {
         content.innerHTML = `
             <div class="batch-queue-detail-layout" data-bq-detail-for="${escapeHtml(queue.id)}">
             <section class="batch-queue-detail-hero">
@@ -1529,8 +1532,7 @@ async function showBatchQueueDetail(queueId) {
         if (newTechDetails && savedTechDetailsOpen) {
             newTechDetails.open = true;
         }
-
-        modal.style.display = 'block';
+        });
 
         // 仅运行中定时拉取详情；其它状态应停止，避免 innerHTML 重绘把 <details> 等 UI 打回默认态
         if (queue.status === 'running') {
@@ -1540,6 +1542,7 @@ async function showBatchQueueDetail(queueId) {
         }
     } catch (error) {
         console.error('获取队列详情失败:', error);
+        closeBatchQueueDetailModal();
         alert(_t('tasks.getQueueDetailFailed') + ': ' + error.message);
     }
 }
@@ -1708,10 +1711,7 @@ async function deleteBatchQueueFromList(queueId) {
 
 // 关闭批量任务队列详情模态框
 function closeBatchQueueDetailModal() {
-    const modal = document.getElementById('batch-queue-detail-modal');
-    if (modal) {
-        modal.style.display = 'none';
-    }
+    closeAppModal('batch-queue-detail-modal');
     batchQueuesState.currentQueueId = null;
     stopBatchQueueRefresh();
 }
@@ -1730,7 +1730,7 @@ function startBatchQueueRefresh(queueId) {
             content.querySelector('.bq-inline-edit-controls') ||
             content.querySelector('.batch-task-inline-edit')
         );
-        if ((addModal && addModal.style.display === 'block') || hasInlineEdit) {
+        if ((addModal && isAppModalOpen('add-batch-task-modal')) || hasInlineEdit) {
             return;
         }
         if (batchQueuesState._bqDetailRefreshing) {
@@ -1891,12 +1891,7 @@ function showAddBatchTaskModal() {
     }
     
     messageInput.value = '';
-    modal.style.display = 'block';
-    
-    // 聚焦到输入框
-    setTimeout(() => {
-        messageInput.focus();
-    }, 100);
+    openAppModal('add-batch-task-modal', { focusEl: messageInput });
     
     // 清理旧的事件监听器
     if (showAddBatchTaskModal._escHandler) {
@@ -1940,9 +1935,7 @@ function closeAddBatchTaskModal() {
     }
     const modal = document.getElementById('add-batch-task-modal');
     const messageInput = document.getElementById('add-task-message');
-    if (modal) {
-        modal.style.display = 'none';
-    }
+    closeAppModal('add-batch-task-modal');
     if (messageInput) {
         messageInput.value = '';
     }
@@ -2462,7 +2455,7 @@ document.addEventListener('languagechange', function () {
         const detailModal = document.getElementById('batch-queue-detail-modal');
         if (
             detailModal &&
-            detailModal.style.display === 'block' &&
+            isAppModalOpen('batch-queue-detail-modal') &&
             batchQueuesState.currentQueueId
         ) {
             showBatchQueueDetail(batchQueuesState.currentQueueId);

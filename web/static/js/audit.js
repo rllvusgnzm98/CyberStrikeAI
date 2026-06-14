@@ -533,56 +533,61 @@ async function exportAuditLogsCsv() {
 }
 
 function closeAuditDetailModal() {
+    closeAppModal('audit-detail-modal');
     const el = document.getElementById('audit-detail-modal');
     if (el) el.remove();
+    syncAppModalBodyLock();
 }
 
 async function showAuditLogDetail(id) {
     if (!id || typeof apiFetch !== 'function') return;
     const esc = typeof escapeHtml === 'function' ? escapeHtml : function (s) { return String(s || ''); };
     try {
+        closeAuditDetailModal();
+        const overlay = document.createElement('div');
+        overlay.id = 'audit-detail-modal';
+        overlay.className = 'modal';
+        document.body.appendChild(overlay);
+        openAppModal(overlay, { focus: false });
         const r = await apiFetch('/api/audit/logs/' + encodeURIComponent(id));
         if (!r.ok) throw new Error('not found');
         const data = await r.json();
         const log = data.log || {};
         const detail = log.detail ? JSON.stringify(log.detail, null, 2) : '';
-        closeAuditDetailModal();
-        const overlay = document.createElement('div');
-        overlay.id = 'audit-detail-modal';
-        overlay.className = 'modal';
-        overlay.style.display = 'block';
         const catAction = esc(auditCategoryLabel(log.category || '')) + ' / ' + esc(auditActionLabel(log.action || ''));
-        overlay.innerHTML =
-            '<div class="modal-content" style="max-width: 720px;">' +
-            '<div class="modal-header">' +
-            '<h2>' + esc(auditT('settingsAudit.detailTitle', null, '审计详情')) + '</h2>' +
-            '<span class="modal-close" onclick="closeAuditDetailModal()">&times;</span>' +
-            '</div>' +
-            '<div class="modal-body audit-detail-body">' +
-            '<p><strong>' + esc(auditT('settingsAudit.detailTime', null, '时间')) + ':</strong> ' + esc(formatAuditTime(log.createdAt)) + '</p>' +
-            '<p><strong>' + esc(auditT('settingsAudit.detailCategory', null, '类别')) + ':</strong> ' + catAction + '</p>' +
-            '<p><strong>' + esc(auditT('settingsAudit.detailResult', null, '结果')) + ':</strong> ' + esc(log.result || '') + '</p>' +
-            '<p><strong>' + esc(auditT('settingsAudit.detailMessage', null, '说明')) + ':</strong> ' + esc(log.message || '') + '</p>' +
-            (log.clientIp ? '<p><strong>IP:</strong> ' + esc(log.clientIp) + '</p>' : '') +
-            (log.sessionHint ? '<p><strong>' + esc(auditT('settingsAudit.detailSession', null, '会话')) + ':</strong> ' + esc(log.sessionHint) + '</p>' : '') +
-            (log.userAgent ? '<p><strong>UA:</strong> ' + esc(log.userAgent) + '</p>' : '') +
-            auditResourceMeta(log) +
-            (detail ? '<pre class="audit-detail-pre">' + esc(detail) + '</pre>' : '') +
-            '</div>' +
-            '<div class="modal-footer"><button type="button" class="btn-secondary" onclick="closeAuditDetailModal()">' +
-            esc(auditT('common.close', null, '关闭')) + '</button></div>' +
-            '</div>';
-        document.body.appendChild(overlay);
-        const chatBtn = overlay.querySelector('.audit-open-chat-btn');
-        if (chatBtn) {
-            chatBtn.addEventListener('click', function () {
-                auditOpenConversationChat(chatBtn.getAttribute('data-conversation-id'));
+        deferModalContent(function () {
+            overlay.innerHTML =
+                '<div class="modal-content" style="max-width: 720px;">' +
+                '<div class="modal-header">' +
+                '<h2>' + esc(auditT('settingsAudit.detailTitle', null, '审计详情')) + '</h2>' +
+                '<span class="modal-close" onclick="closeAuditDetailModal()">&times;</span>' +
+                '</div>' +
+                '<div class="modal-body audit-detail-body">' +
+                '<p><strong>' + esc(auditT('settingsAudit.detailTime', null, '时间')) + ':</strong> ' + esc(formatAuditTime(log.createdAt)) + '</p>' +
+                '<p><strong>' + esc(auditT('settingsAudit.detailCategory', null, '类别')) + ':</strong> ' + catAction + '</p>' +
+                '<p><strong>' + esc(auditT('settingsAudit.detailResult', null, '结果')) + ':</strong> ' + esc(log.result || '') + '</p>' +
+                '<p><strong>' + esc(auditT('settingsAudit.detailMessage', null, '说明')) + ':</strong> ' + esc(log.message || '') + '</p>' +
+                (log.clientIp ? '<p><strong>IP:</strong> ' + esc(log.clientIp) + '</p>' : '') +
+                (log.sessionHint ? '<p><strong>' + esc(auditT('settingsAudit.detailSession', null, '会话')) + ':</strong> ' + esc(log.sessionHint) + '</p>' : '') +
+                (log.userAgent ? '<p><strong>UA:</strong> ' + esc(log.userAgent) + '</p>' : '') +
+                auditResourceMeta(log) +
+                (detail ? '<pre class="audit-detail-pre">' + esc(detail) + '</pre>' : '') +
+                '</div>' +
+                '<div class="modal-footer"><button type="button" class="btn-secondary" onclick="closeAuditDetailModal()">' +
+                esc(auditT('common.close', null, '关闭')) + '</button></div>' +
+                '</div>';
+            const chatBtn = overlay.querySelector('.audit-open-chat-btn');
+            if (chatBtn) {
+                chatBtn.addEventListener('click', function () {
+                    auditOpenConversationChat(chatBtn.getAttribute('data-conversation-id'));
+                });
+            }
+            overlay.addEventListener('click', function (ev) {
+                if (ev.target === overlay) closeAuditDetailModal();
             });
-        }
-        overlay.addEventListener('click', function (ev) {
-            if (ev.target === overlay) closeAuditDetailModal();
         });
     } catch (e) {
+        closeAuditDetailModal();
         if (typeof showToast === 'function') {
             showToast(e.message || String(e), 'error');
         }

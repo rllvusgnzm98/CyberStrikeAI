@@ -344,7 +344,9 @@ function showFofaParseModal(nlText, parsed) {
     const modal = document.createElement('div');
     modal.id = 'fofa-parse-modal';
     modal.className = 'modal';
-    modal.style.display = 'block';
+    document.body.appendChild(modal);
+    openAppModal(modal, { focus: false });
+    deferModalContent(function () {
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 900px;">
             <div class="modal-header">
@@ -384,24 +386,24 @@ function showFofaParseModal(nlText, parsed) {
         </div>
     `;
 
-    document.body.appendChild(modal);
-
     const queryTextarea = document.getElementById('fofa-parse-query');
     if (queryTextarea) {
         queryTextarea.value = (parsed?.query || '').trim();
-        setTimeout(() => {
-            try { queryTextarea.focus(); } catch (e) { /* ignore */ }
-        }, 0);
+        queryTextarea.focus();
     }
 
-    const close = () => modal.remove();
-    modal.addEventListener('click', (e) => {
+    const close = function () {
+        closeAppModal(modal);
+        modal.remove();
+        syncAppModalBodyLock();
+    };
+    modal.addEventListener('click', function (e) {
         if (e.target === modal) close();
     });
     document.getElementById('fofa-parse-modal-close')?.addEventListener('click', close);
     document.getElementById('fofa-parse-cancel')?.addEventListener('click', close);
 
-    const applyToQuery = (run) => {
+    const applyToQuery = function (run) {
         const els = getFofaFormElements();
         const q = (queryTextarea?.value || '').trim();
         if (!q) {
@@ -435,6 +437,7 @@ function showFofaParseModal(nlText, parsed) {
         }
     };
     document.addEventListener('keydown', onKey);
+    });
 }
 
 function setFofaMeta(text) {
@@ -1091,8 +1094,13 @@ function showCellDetailModal(field, fullText) {
     `;
 
     document.body.appendChild(modal);
+    openAppModal(modal);
 
-    const close = () => modal.remove();
+    const close = function () {
+        closeAppModal(modal);
+        modal.remove();
+        syncAppModalBodyLock();
+    };
     modal.addEventListener('click', (e) => {
         if (e.target === modal) close();
     });

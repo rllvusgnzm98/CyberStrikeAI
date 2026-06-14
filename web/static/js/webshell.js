@@ -2301,10 +2301,14 @@ function selectWebshell(id, stateReady) {
 
     function setDbProfileModalVisible(visible, mode) {
         if (!dbProfileModalEl) return;
-        dbProfileModalEl.style.display = visible ? 'block' : 'none';
-        if (dbProfileModalTitleEl) {
-            if (mode === 'add') dbProfileModalTitleEl.textContent = wsT('webshell.dbAddProfile') || '新增连接';
-            else dbProfileModalTitleEl.textContent = wsT('webshell.editConnectionTitle') || '编辑连接';
+        if (visible) {
+            if (dbProfileModalTitleEl) {
+                if (mode === 'add') dbProfileModalTitleEl.textContent = wsT('webshell.dbAddProfile') || '新增连接';
+                else dbProfileModalTitleEl.textContent = wsT('webshell.editConnectionTitle') || '编辑连接';
+            }
+            openAppModal(dbProfileModalEl);
+        } else {
+            closeAppModal(dbProfileModalEl);
         }
     }
 
@@ -4369,37 +4373,38 @@ function showAddWebshellModal() {
     var titleEl = document.getElementById('webshell-modal-title');
     if (titleEl) titleEl.textContent = wsT('webshell.addConnection');
     var modal = document.getElementById('webshell-modal');
-    if (modal) modal.style.display = 'block';
+    if (modal) openAppModal(modal);
 }
 
 // 打开编辑连接弹窗（预填当前连接信息）
 function showEditWebshellModal(connId) {
     var conn = webshellConnections.find(function (c) { return c.id === connId; });
     if (!conn) return;
-    var editIdEl = document.getElementById('webshell-edit-id');
-    if (editIdEl) editIdEl.value = conn.id;
-    document.getElementById('webshell-url').value = conn.url || '';
-    document.getElementById('webshell-password').value = conn.password || '';
-    document.getElementById('webshell-type').value = conn.type || 'php';
-    document.getElementById('webshell-method').value = (conn.method || 'post').toLowerCase();
-    document.getElementById('webshell-cmd-param').value = conn.cmdParam || '';
-    var osEditEl = document.getElementById('webshell-os');
-    if (osEditEl) osEditEl.value = normalizeWebshellOS(conn.os);
-    var encEditEl = document.getElementById('webshell-encoding');
-    if (encEditEl) encEditEl.value = normalizeWebshellEncoding(conn.encoding);
-    document.getElementById('webshell-remark').value = conn.remark || '';
     var titleEl = document.getElementById('webshell-modal-title');
     if (titleEl) titleEl.textContent = wsT('webshell.editConnectionTitle');
-    var modal = document.getElementById('webshell-modal');
-    if (modal) modal.style.display = 'block';
+    openAppModal('webshell-modal', { focus: false });
+    deferModalContent(function () {
+        var editIdEl = document.getElementById('webshell-edit-id');
+        if (editIdEl) editIdEl.value = conn.id;
+        document.getElementById('webshell-url').value = conn.url || '';
+        document.getElementById('webshell-password').value = conn.password || '';
+        document.getElementById('webshell-type').value = conn.type || 'php';
+        document.getElementById('webshell-method').value = (conn.method || 'post').toLowerCase();
+        document.getElementById('webshell-cmd-param').value = conn.cmdParam || '';
+        var osEditEl = document.getElementById('webshell-os');
+        if (osEditEl) osEditEl.value = normalizeWebshellOS(conn.os);
+        var encEditEl = document.getElementById('webshell-encoding');
+        if (encEditEl) encEditEl.value = normalizeWebshellEncoding(conn.encoding);
+        document.getElementById('webshell-remark').value = conn.remark || '';
+        document.getElementById('webshell-url')?.focus();
+    });
 }
 
 // 关闭弹窗
 function closeWebshellModal() {
     var editIdEl = document.getElementById('webshell-edit-id');
     if (editIdEl) editIdEl.value = '';
-    var modal = document.getElementById('webshell-modal');
-    if (modal) modal.style.display = 'none';
+    closeAppModal('webshell-modal');
 }
 
 // 语言切换时刷新 WebShell 页面内所有由 JS 生成的文案（不重建终端）
@@ -4571,7 +4576,7 @@ function refreshWebshellUIOnLanguageChange() {
     }
 
     var modal = document.getElementById('webshell-modal');
-    if (modal && modal.style.display === 'block') {
+    if (modal && isAppModalOpen('webshell-modal')) {
         var titleEl = document.getElementById('webshell-modal-title');
         var editIdEl = document.getElementById('webshell-edit-id');
         if (titleEl) {

@@ -1002,7 +1002,7 @@ async function openChatFilesEdit(relativePath) {
     const modal = document.getElementById('chat-files-edit-modal');
     if (pathEl) pathEl.textContent = relativePath;
     if (ta) ta.value = '';
-    if (modal) modal.style.display = 'block';
+    openAppModal('chat-files-edit-modal', { focus: false });
 
     try {
         const res = await apiFetch('/api/chat-uploads/content?path=' + encodeURIComponent(relativePath));
@@ -1017,16 +1017,19 @@ async function openChatFilesEdit(relativePath) {
             throw new Error(errText || res.status);
         }
         const data = await res.json();
-        if (ta) ta.value = data.content != null ? String(data.content) : '';
+        const content = data.content != null ? String(data.content) : '';
+        deferModalContent(() => {
+            if (ta) ta.value = content;
+            ta?.focus();
+        });
     } catch (e) {
-        if (modal) modal.style.display = 'none';
+        closeAppModal('chat-files-edit-modal');
         alert(chatFilesAlertMessage(e && e.message));
     }
 }
 
 function closeChatFilesEditModal() {
-    const modal = document.getElementById('chat-files-edit-modal');
-    if (modal) modal.style.display = 'none';
+    closeAppModal('chat-files-edit-modal');
     chatFilesEditRelativePath = '';
 }
 
@@ -1060,7 +1063,7 @@ function openChatFilesRename(relativePath, currentName) {
         input.value = currentName || '';
         input.select();
     }
-    if (modal) modal.style.display = 'flex';
+    if (modal) openAppModal(modal);
     if (modal && typeof window.applyTranslations === 'function') {
         window.applyTranslations(modal);
     }
@@ -1068,8 +1071,7 @@ function openChatFilesRename(relativePath, currentName) {
 }
 
 function closeChatFilesRenameModal() {
-    const modal = document.getElementById('chat-files-rename-modal');
-    if (modal) modal.style.display = 'none';
+    closeAppModal('chat-files-rename-modal');
     const hint = document.getElementById('chat-files-rename-path-hint');
     if (hint) hint.textContent = '';
     chatFilesRenameRelativePath = '';
@@ -1106,7 +1108,7 @@ function openChatFilesMkdirModal() {
     const p = chatFilesBrowsePath.join('/');
     if (hint) hint.textContent = p ? ('chat_uploads/' + p) : 'chat_uploads';
     if (input) input.value = '';
-    if (modal) modal.style.display = 'flex';
+    if (modal) openAppModal(modal);
     if (modal && typeof window.applyTranslations === 'function') {
         window.applyTranslations(modal);
     }
@@ -1116,8 +1118,7 @@ function openChatFilesMkdirModal() {
 }
 
 function closeChatFilesMkdirModal() {
-    const modal = document.getElementById('chat-files-mkdir-modal');
-    if (modal) modal.style.display = 'none';
+    closeAppModal('chat-files-mkdir-modal');
     const input = document.getElementById('chat-files-mkdir-input');
     if (input) input.value = '';
 }

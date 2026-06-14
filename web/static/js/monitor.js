@@ -944,18 +944,12 @@ function openUserInterruptModal(progressId, conversationId) {
     if (ta) {
         ta.value = '';
     }
-    const m = document.getElementById('user-interrupt-modal');
-    if (m) {
-        m.style.display = 'block';
-    }
+    openAppModal('user-interrupt-modal');
 }
 
 function closeUserInterruptModal() {
     userInterruptModalPending = null;
-    const m = document.getElementById('user-interrupt-modal');
-    if (m) {
-        m.style.display = 'none';
-    }
+    closeAppModal('user-interrupt-modal');
 }
 
 async function submitUserInterruptContinue() {

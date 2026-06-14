@@ -2096,47 +2096,42 @@ function showAddExternalMCPModal() {
     document.getElementById('external-mcp-json-error').style.display = 'none';
     document.getElementById('external-mcp-json-error').textContent = '';
     document.getElementById('external-mcp-json').classList.remove('error');
-    document.getElementById('external-mcp-modal').style.display = 'block';
+    openAppModal('external-mcp-modal');
 }
 
 // 关闭外部MCP模态框
 function closeExternalMCPModal() {
-    document.getElementById('external-mcp-modal').style.display = 'none';
+    closeAppModal('external-mcp-modal');
     currentEditingMCPName = null;
 }
 
 // 编辑外部MCP
 async function editExternalMCP(name) {
     try {
+        currentEditingMCPName = name;
+        document.getElementById('external-mcp-modal-title').textContent = (typeof window.t === 'function' ? window.t('mcp.editExternalMCP') : '编辑外部MCP');
+        document.getElementById('external-mcp-json').value = '';
+        document.getElementById('external-mcp-json-error').style.display = 'none';
+        document.getElementById('external-mcp-json-error').textContent = '';
+        document.getElementById('external-mcp-json').classList.remove('error');
+        openAppModal('external-mcp-modal', { focus: false });
         const response = await apiFetch(`/api/external-mcp/${encodeURIComponent(name)}`);
         if (!response.ok) {
             throw new Error(typeof window.t === 'function' ? window.t('mcp.getConfigFailed') : '获取外部MCP配置失败');
         }
-        
         const server = await response.json();
-        currentEditingMCPName = name;
-        
-        document.getElementById('external-mcp-modal-title').textContent = (typeof window.t === 'function' ? window.t('mcp.editExternalMCP') : '编辑外部MCP');
-        
-        // 将配置转换为对象格式（key为名称）
         const config = { ...server.config };
-        // 移除tool_count、external_mcp_enable等前端字段，但保留enabled/disabled用于向后兼容
         delete config.tool_count;
         delete config.external_mcp_enable;
-        
-        // 包装成对象格式：{ "name": { config } }
         const configObj = {};
         configObj[name] = config;
-        
-        // 格式化JSON
         const jsonStr = JSON.stringify(configObj, null, 2);
-        document.getElementById('external-mcp-json').value = jsonStr;
-        document.getElementById('external-mcp-json-error').style.display = 'none';
-        document.getElementById('external-mcp-json-error').textContent = '';
-        document.getElementById('external-mcp-json').classList.remove('error');
-        
-        document.getElementById('external-mcp-modal').style.display = 'block';
+        deferModalContent(() => {
+            document.getElementById('external-mcp-json').value = jsonStr;
+            document.getElementById('external-mcp-json')?.focus();
+        });
     } catch (error) {
+        closeExternalMCPModal();
         console.error('编辑外部MCP失败:', error);
         alert((typeof window.t === 'function' ? window.t('mcp.operationFailed') : '编辑失败') + ': ' + error.message);
     }

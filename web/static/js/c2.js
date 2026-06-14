@@ -478,7 +478,7 @@
         const content = document.getElementById('c2-modal-content');
         if (!content || !modal) return;
 
-        modal.style.display = 'flex';
+        openAppModal(modal);
         content.innerHTML = `
             <div class="c2-modal-header">
                 <h3>${escapeHtml(c2t('c2.listeners.modalCreateTitle'))}</h3>
@@ -635,7 +635,7 @@
         const content = document.getElementById('c2-modal-content');
         if (!content || !modal) return;
 
-        modal.style.display = 'flex';
+        openAppModal(modal);
         content.innerHTML = `
             <div class="c2-modal-header">
                 <h3>${escapeHtml(c2t('c2.listeners.editTitle'))}</h3>
@@ -2376,7 +2376,7 @@
                 <button class="btn-secondary" onclick="C2.closeModal()">${escapeHtml(c2t('common.close'))}</button>
             </div>
         `;
-            modal.style.display = 'flex';
+            openAppModal(modal);
         };
 
         const local = C2.tasks.find(x => x.id === id);
@@ -2920,7 +2920,7 @@
                 <button class="btn-primary" onclick="C2.createProfile()">${escapeHtml(c2t('c2.profiles.submitCreate'))}</button>
             </div>
         `;
-        modal.style.display = 'flex';
+        openAppModal(modal);
     };
 
     C2.createProfile = function() {
@@ -2981,10 +2981,10 @@
     C2.closeModal = function() {
         const modal = document.getElementById('c2-modal');
         if (modal) {
-            modal.style.display = 'none';
             const modalBox = modal.querySelector('.c2-modal');
             if (modalBox) modalBox.classList.remove('c2-modal--wide');
         }
+        closeAppModal('c2-modal');
     };
 
     // ============================================================================

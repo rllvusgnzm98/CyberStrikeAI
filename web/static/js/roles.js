@@ -1112,7 +1112,7 @@ async function showAddRoleModal() {
     // 确保统计信息正确更新（显示0/108）
     updateRoleToolsStats();
 
-    modal.style.display = 'flex';
+    openAppModal('role-modal');
 }
 
 // 编辑角色
@@ -1274,15 +1274,16 @@ async function editRole(roleName) {
         }
     }
 
-    modal.style.display = 'flex';
+    openAppModal('role-modal');
 }
 
 // 关闭角色模态框
 function closeRoleModal() {
-    const modal = document.getElementById('role-modal');
-    if (modal) {
-        modal.style.display = 'none';
-    }
+    closeAppModal('role-modal');
+}
+
+function closeRoleSelectModal() {
+    closeAppModal('role-select-modal');
 }
 
 // 获取所有选中的工具（包括未在MCP管理中启用的工具）
@@ -1634,6 +1635,7 @@ if (typeof window !== 'undefined') {
     window.getCurrentRole = getCurrentRole;
     window.toggleRoleSelectionPanel = toggleRoleSelectionPanel;
     window.closeRoleSelectionPanel = closeRoleSelectionPanel;
+    window.closeRoleSelectModal = closeRoleSelectModal;
     window.filterRoleToolsByStatus = filterRoleToolsByStatus;
     window.currentSelectedRole = getCurrentRole();
     

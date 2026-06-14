@@ -905,25 +905,32 @@ function showAddKnowledgeItemModal() {
     document.getElementById('knowledge-item-category').value = '';
     document.getElementById('knowledge-item-title').value = '';
     document.getElementById('knowledge-item-content').value = '';
-    document.getElementById('knowledge-item-modal').style.display = 'block';
+    openAppModal('knowledge-item-modal');
 }
 
 // 编辑知识项
 async function editKnowledgeItem(id) {
     try {
+        currentEditingItemId = id;
+        document.getElementById('knowledge-item-modal-title').textContent = '编辑知识';
+        document.getElementById('knowledge-item-category').value = '';
+        document.getElementById('knowledge-item-title').value = '';
+        document.getElementById('knowledge-item-content').value = '';
+        openAppModal('knowledge-item-modal', { focus: false });
         const response = await apiFetch(`/api/knowledge/items/${id}`);
         if (!response.ok) {
             throw new Error('获取知识项失败');
         }
         const item = await response.json();
-        
-        currentEditingItemId = id;
-        document.getElementById('knowledge-item-modal-title').textContent = '编辑知识';
-        document.getElementById('knowledge-item-category').value = item.category;
-        document.getElementById('knowledge-item-title').value = item.title;
-        document.getElementById('knowledge-item-content').value = item.content;
-        document.getElementById('knowledge-item-modal').style.display = 'block';
+        deferModalContent(() => {
+            document.getElementById('knowledge-item-category').value = item.category;
+            document.getElementById('knowledge-item-title').value = item.title;
+            document.getElementById('knowledge-item-content').value = item.content;
+            document.getElementById('knowledge-item-title')?.focus();
+        });
     } catch (error) {
+        closeAppModal('knowledge-item-modal');
+        currentEditingItemId = null;
         console.error('编辑知识项失败:', error);
         showNotification('编辑知识项失败: ' + error.message, 'error');
     }
@@ -1232,10 +1239,7 @@ function updateKnowledgeStatsAfterDelete() {
 
 // 关闭知识项模态框
 function closeKnowledgeItemModal() {
-    const modal = document.getElementById('knowledge-item-modal');
-    if (modal) {
-        modal.style.display = 'none';
-    }
+    closeAppModal('knowledge-item-modal');
     
     // 重置编辑状态
     currentEditingItemId = null;
@@ -1786,8 +1790,11 @@ function showRetrievalLogDetailsModal(log, retrievedItems) {
         document.body.appendChild(modal);
     }
     
-    // 填充内容
     const content = document.getElementById('retrieval-log-details-content');
+    if (content) content.innerHTML = '<p style="color:#64748b;margin:0;">…</p>';
+    openAppModal(modal, { focus: false });
+
+    deferModalContent(() => {
     const timeAgo = getTimeAgo(log.createdAt);
     const fullTime = formatTime(log.createdAt);
     
@@ -1880,16 +1887,12 @@ function showRetrievalLogDetailsModal(log, retrievedItems) {
             </div>
         </div>
     `;
-    
-    modal.style.display = 'block';
+    });
 }
 
 // 关闭检索日志详情模态框
 function closeRetrievalLogDetailsModal() {
-    const modal = document.getElementById('retrieval-log-details-modal');
-    if (modal) {
-        modal.style.display = 'none';
-    }
+    closeAppModal('retrieval-log-details-modal');
 }
 
 // 点击模态框外部关闭
@@ -2118,7 +2121,8 @@ function showToastNotification(message, type = 'info') {
         font-size: 0.875rem;
         line-height: 1.45;
         word-wrap: break-word;
-        backdrop-filter: blur(8px);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
     `;
 
     toast.innerHTML = `
