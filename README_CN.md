@@ -310,7 +310,7 @@ go build -o cyberstrike-ai cmd/server/main.go
 ### 工具编排与扩展
 - `tools/*.yaml` 定义命令、参数、提示词与元数据，可热加载。
 - `security.tools_dir` 指向目录即可批量启用；仍支持在主配置里内联定义。
-- **大结果分页**：超过 200KB 的输出会保存为附件，可通过 `query_execution_result` 工具分页、过滤、正则检索。
+- **大工具输出**：超过 `reduction_max_length_for_trunc` 时由 Eino reduction 摘要，完整内容落盘至 `tmp/reduction/`；按 `<persisted-output>` 中的路径用 `read_file` 读取。
 - **结果压缩/摘要**：多兆字节日志可先压缩或生成摘要再写入 SQLite，减小档案体积。
 
 **自定义工具的一般步骤**

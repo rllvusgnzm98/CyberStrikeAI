@@ -312,7 +312,7 @@ Requirements / tips:
 ### Tool Orchestration & Extensions
 - **YAML recipes** in `tools/*.yaml` describe commands, arguments, prompts, and metadata.
 - **Directory hot-reload** – pointing `security.tools_dir` to a folder is usually enough; inline definitions in `config.yaml` remain supported for quick experiments.
-- **Large-result pagination** – outputs beyond 200 KB are stored as artifacts retrievable through the `query_execution_result` tool with paging, filters, and regex search.
+- **Large tool outputs** – outputs beyond `reduction_max_length_for_trunc` are summarized via Eino reduction with full content persisted under `tmp/reduction/`; use `read_file` on the path in `<persisted-output>`.
 - **Result compression** – multi-megabyte logs can be summarized or losslessly compressed before persisting to keep SQLite lean.
 
 **Creating a custom tool (typical flow)**
