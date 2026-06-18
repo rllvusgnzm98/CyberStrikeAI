@@ -507,6 +507,42 @@ func (db *DB) CancelPendingBatchTasks(queueID string, completedAt time.Time) err
 	return nil
 }
 
+// PrepareBatchSingleTaskRun 准备单条执行：可选重置子任务，并更新队列索引与状态
+func (db *DB) PrepareBatchSingleTaskRun(queueID, taskID string, taskIndex int, resetTask, resumeQueue bool) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("开始事务失败: %w", err)
+	}
+	defer tx.Rollback()
+
+	if resetTask {
+		_, err = tx.Exec(
+			"UPDATE batch_tasks SET status = ?, conversation_id = NULL, started_at = NULL, completed_at = NULL, error = NULL, result = NULL WHERE queue_id = ? AND id = ?",
+			"pending", queueID, taskID,
+		)
+		if err != nil {
+			return fmt.Errorf("重置批量任务状态失败: %w", err)
+		}
+	}
+
+	if resumeQueue {
+		_, err = tx.Exec(
+			"UPDATE batch_task_queues SET status = ?, current_index = ?, completed_at = NULL, last_run_error = NULL WHERE id = ?",
+			"paused", taskIndex, queueID,
+		)
+	} else {
+		_, err = tx.Exec(
+			"UPDATE batch_task_queues SET current_index = ?, last_run_error = NULL WHERE id = ?",
+			taskIndex, queueID,
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("更新批量任务队列状态失败: %w", err)
+	}
+
+	return tx.Commit()
+}
+
 // DeleteBatchTask 删除批量任务
 func (db *DB) DeleteBatchTask(queueID, taskID string) error {
 	_, err := db.Exec(

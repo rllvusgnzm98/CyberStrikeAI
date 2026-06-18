@@ -382,26 +382,40 @@ func (db *DB) CountConversations(search string) (int, error) {
 	return count, nil
 }
 
+func conversationOrderClause(sortBy, tableAlias string) string {
+	col := "updated_at"
+	if strings.TrimSpace(strings.ToLower(sortBy)) == "created_at" {
+		col = "created_at"
+	}
+	prefix := tableAlias
+	if prefix != "" {
+		prefix += "."
+	}
+	return "ORDER BY " + prefix + col + " DESC"
+}
+
 // ListConversations 列出所有对话
-func (db *DB) ListConversations(limit, offset int, search string) ([]*Conversation, error) {
+func (db *DB) ListConversations(limit, offset int, search, sortBy string) ([]*Conversation, error) {
 	var rows *sql.Rows
 	var err error
 
 	if search != "" {
 		// 使用 EXISTS 子查询代替 LEFT JOIN + DISTINCT，避免大表笛卡尔积
 		searchPattern := "%" + search + "%"
+		orderClause := conversationOrderClause(sortBy, "c")
 		rows, err = db.Query(
 			`SELECT c.id, c.title, COALESCE(c.pinned, 0), c.created_at, c.updated_at, c.project_id
 			 FROM conversations c
 			 WHERE c.title LIKE ?
 			    OR EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.content LIKE ?)
-			 ORDER BY c.updated_at DESC
+			 `+orderClause+`
 			 LIMIT ? OFFSET ?`,
 			searchPattern, searchPattern, limit, offset,
 		)
 	} else {
+		orderClause := conversationOrderClause(sortBy, "")
 		rows, err = db.Query(
-			"SELECT id, title, COALESCE(pinned, 0), created_at, updated_at, project_id FROM conversations ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+			"SELECT id, title, COALESCE(pinned, 0), created_at, updated_at, project_id FROM conversations "+orderClause+" LIMIT ? OFFSET ?",
 			limit, offset,
 		)
 	}
@@ -467,11 +481,12 @@ func (db *DB) CountUngroupedConversations() (int, error) {
 }
 
 // ListUngroupedConversations 列出不在任何分组中的对话（最近对话侧栏）。
-func (db *DB) ListUngroupedConversations(limit, offset int) ([]*Conversation, error) {
+func (db *DB) ListUngroupedConversations(limit, offset int, sortBy string) ([]*Conversation, error) {
+	orderClause := conversationOrderClause(sortBy, "c")
 	rows, err := db.Query(
 		`SELECT c.id, c.title, COALESCE(c.pinned, 0), c.created_at, c.updated_at, c.project_id `+
 			ungroupedConversationsSQL+`
-		 ORDER BY c.updated_at DESC
+		 `+orderClause+`
 		 LIMIT ? OFFSET ?`,
 		limit, offset,
 	)
