@@ -2353,7 +2353,8 @@
     "copyContent": "Copy content",
     "correctInfo": "Correct info",
     "errorInfo": "Error info",
-    "copyError": "Copy error"
+    "copyError": "Copy error",
+    "contentTruncated": "… (display truncated; use read_file on the path in persisted-output for the full file)"
   },
   "attackChainModal": {
     "title": "Attack chain",

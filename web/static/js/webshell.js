@@ -3391,28 +3391,6 @@ function runWebshellAiSend(conn, inputEl, sendBtn, messagesContainer) {
                         }
                         if (!streamingTarget) assistantDiv.textContent = '…';
 
-                    // ─── Tool result delta (streaming output) ───
-                    } else if (_et === 'tool_result_delta' && _ed.toolCallId) {
-                        var trdKey = _ed.toolCallId;
-                        var trdDelta = _em || '';
-                        if (trdDelta) {
-                            var trdState = wsToolResultStreams.get(trdKey);
-                            if (!trdState) {
-                                var callEl = wsToolCallItems.get(trdKey);
-                                trdState = { el: callEl || null, buf: '', onCall: !!callEl };
-                                wsToolResultStreams.set(trdKey, trdState);
-                            }
-                            trdState.buf += trdDelta;
-                            if (trdState.el) {
-                                var trdPre = trdState.el.querySelector('pre.tool-result');
-                                if (trdPre) {
-                                    trdPre.classList.remove('tool-result-pending');
-                                    trdPre.textContent = trdState.buf;
-                                }
-                            }
-                        }
-                        if (!streamingTarget) assistantDiv.textContent = '…';
-
                     // ─── Tool result (final) ───
                     } else if (_et === 'tool_result' && _ed) {
                         var success = _ed.success !== false;

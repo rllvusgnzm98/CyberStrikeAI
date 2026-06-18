@@ -2059,45 +2059,9 @@ function handleStreamEvent(event, progressElement, progressId,
             }
             break;
 
-        case 'tool_result_delta': {
-            const deltaInfo = event.data || {};
-            const toolCallId = deltaInfo.toolCallId || null;
-            if (!toolCallId) break;
-
-            const key = toolResultStreamKey(progressId, toolCallId);
-            let state = toolResultStreamStateByKey.get(key);
-            const deltaText = event.message || '';
-            if (!deltaText) break;
-
-            if (!state) {
-                const mapping = getToolCallMapping(progressId, toolCallId);
-                let callItemId = mapping && mapping.itemId ? mapping.itemId : null;
-                if (callItemId) {
-                    const callItem = document.getElementById(callItemId);
-                    if (callItem) {
-                        ensureToolCallResultSlot(callItem);
-                        const section = callItem.querySelector('.tool-result-section');
-                        if (section) {
-                            section.classList.remove('pending');
-                            section.className = 'tool-result-section success';
-                        }
-                    }
-                }
-                state = { itemId: callItemId, buffer: '', onCallItem: !!callItemId };
-                toolResultStreamStateByKey.set(key, state);
-            }
-
-            state.buffer += deltaText;
-            const item = state.itemId ? document.getElementById(state.itemId) : null;
-            if (item) {
-                const pre = item.querySelector('pre.tool-result');
-                if (pre) {
-                    pre.classList.remove('tool-result-pending');
-                    scheduleStreamPlainTextUpdate(pre, state.buffer);
-                }
-            }
+        case 'tool_result_delta':
+            // 工具执行过程不流式展示，仅等 tool_result 展示最终结果。
             break;
-        }
             
         case 'tool_result':
             const resultInfo = event.data || {};

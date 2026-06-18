@@ -2639,6 +2639,57 @@ async function batchUpdateButtonToolNames(buttonsContainer, executionIds) {
 }
 
 // 显示MCP调用详情
+const MCP_DETAIL_MAX_CHARS = 120000;
+
+function extractMCPResultText(result) {
+    if (!result) return '';
+    const content = result.content;
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+        return content
+            .map(item => (item && typeof item === 'object' && typeof item.text === 'string') ? item.text : '')
+            .filter(Boolean)
+            .join('\n\n');
+    }
+    if (content && typeof content === 'object' && typeof content.text === 'string') {
+        return content.text;
+    }
+    return '';
+}
+
+function truncateMCPDetailText(text, maxChars) {
+    if (text == null) return '';
+    const s = String(text);
+    if (s.length <= maxChars) return s;
+    const hint = typeof window.t === 'function'
+        ? window.t('mcpDetailModal.contentTruncated')
+        : '…（展示已截断；完整内容见 persisted-output 中的文件路径，用 read_file 读取）';
+    return s.slice(0, maxChars) + '\n\n' + hint;
+}
+
+/** 响应结果区 JSON 展示（过大时截断 content 内 text，避免 stringify 卡死页面） */
+function formatMCPResultJsonForDisplay(result, maxChars) {
+    if (!result) return '{}';
+    const payload = {
+        content: result.content,
+        isError: !!result.isError
+    };
+    let json = JSON.stringify(payload, null, 2);
+    if (json.length <= maxChars) {
+        return json;
+    }
+    const text = extractMCPResultText(result);
+    const truncatedPayload = {
+        content: [{ type: 'text', text: truncateMCPDetailText(text, Math.min(maxChars - 800, MCP_DETAIL_MAX_CHARS)) }],
+        isError: !!result.isError
+    };
+    json = JSON.stringify(truncatedPayload, null, 2);
+    if (json.length > maxChars) {
+        return json.slice(0, maxChars) + '\n…';
+    }
+    return json;
+}
+
 async function showMCPDetail(executionId) {
     try {
         openAppModal('mcp-detail-modal', { focus: false });
@@ -2700,42 +2751,22 @@ async function showMCPDetail(executionId) {
             }
 
             if (exec.result) {
-                const responseData = {
-                    content: exec.result.content,
-                    isError: exec.result.isError
-                };
-                responseElement.textContent = JSON.stringify(responseData, null, 2);
+                const agentVisibleText = truncateMCPDetailText(extractMCPResultText(exec.result), MCP_DETAIL_MAX_CHARS);
+                const emptyText = typeof window.t === 'function' ? window.t('mcpDetailModal.execSuccessNoContent') : '执行成功，未返回可展示的文本内容。';
 
                 if (exec.result.isError) {
-                    // 错误场景：响应结果标红 + 错误信息区块
                     responseElement.className = 'code-block error';
+                    responseElement.textContent = formatMCPResultJsonForDisplay(exec.result, MCP_DETAIL_MAX_CHARS);
                     if (exec.error && errorSection && errorElement) {
                         errorSection.style.display = 'block';
                         errorElement.textContent = exec.error;
                     }
                 } else {
-                    // 成功场景：响应结果保持普通样式，正确信息单独拎出来
                     responseElement.className = 'code-block';
+                    responseElement.textContent = formatMCPResultJsonForDisplay(exec.result, MCP_DETAIL_MAX_CHARS);
                     if (successSection && successElement) {
                         successSection.style.display = 'block';
-                        let successText = '';
-                        const content = exec.result.content;
-                        if (typeof content === 'string') {
-                            successText = content;
-                        } else if (Array.isArray(content)) {
-                            const texts = content
-                                .map(item => (item && typeof item === 'object' && typeof item.text === 'string') ? item.text : '')
-                                .filter(Boolean);
-                            if (texts.length > 0) {
-                                successText = texts.join('\n\n');
-                            }
-                        } else if (content && typeof content === 'object' && typeof content.text === 'string') {
-                            successText = content.text;
-                        }
-                        if (!successText) {
-                            successText = typeof window.t === 'function' ? window.t('mcpDetailModal.execSuccessNoContent') : '执行成功，未返回可展示的文本内容。';
-                        }
-                        successElement.textContent = successText;
+                        successElement.textContent = agentVisibleText || emptyText;
                     }
                 }
             } else {

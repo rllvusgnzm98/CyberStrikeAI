@@ -2341,7 +2341,8 @@
     "copyContent": "复制内容",
     "correctInfo": "正确信息",
     "errorInfo": "错误信息",
-    "copyError": "复制错误"
+    "copyError": "复制错误",
+    "contentTruncated": "…（展示已截断；完整内容见 persisted-output 中的文件路径，用 read_file 读取）"
   },
   "attackChainModal": {
     "title": "攻击链可视化",
