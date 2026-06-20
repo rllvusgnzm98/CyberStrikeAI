@@ -111,7 +111,7 @@ CyberStrikeAI 是一款 **AI 原生安全测试平台**，基于 Go 构建，集
 - 🔒 Web 登录保护、审计日志、SQLite 持久化
 - 📚 知识库（RAG）：向量嵌入与余弦相似度检索（与 Eino `retriever.Retriever` 语义一致），可选 **Eino Compose** 索引流水线及检索后处理（预算、重排等配置项）
 - 📁 对话分组管理：支持分组创建、置顶、重命名、删除等操作
-- 📂 **项目管理**：按项目归类对话与漏洞；**共享事实**（项目黑板）在多会话间沉淀目标/环境/认证等认知，自动注入 Agent 上下文，支持 MCP 工具读写（`upsert_project_fact`、`get_project_fact` 等）
+- 📂 **项目管理**：共享事实（黑板）跨会话沉淀认知，`upsert_project_fact` + `links` 串联攻击路径；聊天攻击链与项目事实图可视化
 - 🛡️ 漏洞管理功能：完整的漏洞 CRUD 操作，支持严重程度分级、状态流转、按对话/严重程度/状态过滤，以及统计看板
 - 📋 批量任务管理：创建任务队列，批量添加任务，依次顺序执行，支持任务编辑与状态跟踪
 - 🎭 角色化测试：预设安全测试角色（渗透测试、CTF、Web 应用扫描等），支持自定义提示词和工具限制
@@ -549,6 +549,11 @@ multi_agent:
   # orchestrator_instruction_plan_execute / orchestrator_instruction_supervisor 可选
   # eino_skills: { disable: false, filesystem_tools: true, skill_tool_name: skill }
   # eino_middleware: plantask_enable、checkpoint_dir、deep_model_retry_max_retries、deep_output_key 等
+project:
+  enabled: true              # 启用项目黑板与事实 MCP 工具
+  fact_index_max_runes: 65000
+  fact_summary_max_runes: 24000
+  default_inject_deprecated: false
 ```
 
 ### 工具模版示例（`tools/nmap.yaml`）
