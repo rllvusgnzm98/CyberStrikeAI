@@ -1259,101 +1259,60 @@ function integrateProgressToMCPSection(progressId, assistantMessageId, mcpExecut
         return;
     }
     
-    // 查找或创建 MCP 区域
-    let mcpSection = assistantElement.querySelector('.mcp-call-section');
-    if (!mcpSection) {
-        mcpSection = document.createElement('div');
-        mcpSection.className = 'mcp-call-section';
-        const mcpLabel = document.createElement('div');
-        mcpLabel.className = 'mcp-call-label';
-        mcpLabel.textContent = '📋 ' + (typeof window.t === 'function' ? window.t('chat.penetrationTestDetail') : '渗透测试详情');
-        mcpSection.appendChild(mcpLabel);
-        const buttonsContainerInit = document.createElement('div');
-        buttonsContainerInit.className = 'mcp-call-buttons';
-        mcpSection.appendChild(buttonsContainerInit);
-        contentWrapper.appendChild(mcpSection);
+    // 查找或创建 MCP 区域（工具栏 + 工具列表 + 迭代时间线）
+    if (typeof window.ensureMcpCallSectionChrome === 'function') {
+        window.ensureMcpCallSectionChrome(assistantElement, assistantMessageId);
     }
-    
-    // 获取时间线内容
-    const hasContent = timelineHTML.trim().length > 0;
-    
-    // 检查时间线中是否有错误项
-    const hasError = timeline && timeline.querySelector('.timeline-item-error');
-    
-    // 确保按钮容器存在
-    let buttonsContainer = mcpSection.querySelector('.mcp-call-buttons');
-    if (!buttonsContainer) {
-        buttonsContainer = document.createElement('div');
-        buttonsContainer.className = 'mcp-call-buttons';
-        mcpSection.appendChild(buttonsContainer);
+    const mcpSection = assistantElement.querySelector('.mcp-call-section');
+    if (!mcpSection) {
+        removeMessage(progressId);
+        return;
     }
 
-    let maxExecIndex = 0;
-    const existingExecBtns = buttonsContainer.querySelectorAll('.mcp-detail-btn:not(.process-detail-btn)');
-    existingExecBtns.forEach(function (btn) {
-        const n = parseInt(btn.dataset.execIndex, 10);
-        if (!isNaN(n) && n > maxExecIndex) maxExecIndex = n;
-    });
-    const seenExec = new Set();
-    existingExecBtns.forEach(function (btn) {
-        if (btn.dataset.execId) seenExec.add(String(btn.dataset.execId).trim());
-    });
-    let appendedAny = false;
-    if (mcpIds.length > 0) {
-        mcpIds.forEach(function (execId) {
-            const id = execId != null ? String(execId).trim() : '';
-            if (!id || seenExec.has(id)) return;
-            seenExec.add(id);
-            maxExecIndex += 1;
-            appendedAny = true;
-            const detailBtn = document.createElement('button');
-            detailBtn.className = 'mcp-detail-btn';
-            detailBtn.dataset.execId = id;
-            detailBtn.dataset.execIndex = String(maxExecIndex);
-            detailBtn.innerHTML = '<span>' + (typeof window.t === 'function' ? window.t('chat.callNumber', { n: maxExecIndex }) : '调用 #' + maxExecIndex) + '</span>';
-            detailBtn.onclick = function () { showMCPDetail(id); };
-            buttonsContainer.appendChild(detailBtn);
-        });
-        if (appendedAny && typeof batchUpdateButtonToolNames === 'function') {
-            batchUpdateButtonToolNames(buttonsContainer, mcpIds);
-        }
+    const hasContent = timelineHTML.trim().length > 0;
+
+    if (mcpIds.length > 0 && typeof window.appendMcpCallButtons === 'function') {
+        window.appendMcpCallButtons(assistantElement, mcpIds);
+        const toolList = mcpSection.querySelector('.mcp-tool-list');
+        if (toolList) toolList.classList.remove('expanded');
     }
-    if (!buttonsContainer.querySelector('.process-detail-btn')) {
+    if (typeof window.syncMcpToolsToggleButton === 'function') {
+        window.syncMcpToolsToggleButton(assistantElement);
+    }
+
+    const toolbar = mcpSection.querySelector('.mcp-call-toolbar');
+    if (toolbar && !toolbar.querySelector('.process-detail-btn')) {
         const progressDetailBtn = document.createElement('button');
         progressDetailBtn.className = 'mcp-detail-btn process-detail-btn';
         progressDetailBtn.innerHTML = '<span>' + (typeof window.t === 'function' ? window.t('chat.expandDetail') : '展开详情') + '</span>';
         progressDetailBtn.onclick = () => toggleProcessDetails(null, assistantMessageId);
-        buttonsContainer.appendChild(progressDetailBtn);
+        toolbar.appendChild(progressDetailBtn);
     }
-    
-    // 创建详情容器，放在MCP按钮区域下方（统一结构）
+
     const detailsId = 'process-details-' + assistantMessageId;
     let detailsContainer = document.getElementById(detailsId);
+    const toolListEl = mcpSection.querySelector('.mcp-tool-list');
     
     if (!detailsContainer) {
         detailsContainer = document.createElement('div');
         detailsContainer.id = detailsId;
         detailsContainer.className = 'process-details-container';
-        // 确保容器在按钮容器之后
-        if (buttonsContainer.nextSibling) {
-            mcpSection.insertBefore(detailsContainer, buttonsContainer.nextSibling);
+        if (toolListEl) {
+            toolListEl.after(detailsContainer);
         } else {
             mcpSection.appendChild(detailsContainer);
         }
     }
     
-    // 设置详情内容（如果有错误，默认折叠；否则默认折叠）
     detailsContainer.innerHTML = `
         <div class="process-details-content">
             ${hasContent ? `<div class="progress-timeline" id="${detailsId}-timeline">${timelineHTML}</div>` : '<div class="progress-timeline-empty">' + (typeof window.t === 'function' ? window.t('chat.noProcessDetail') : '暂无过程详情（可能执行过快或未触发详细事件）') + '</div>'}
         </div>
     `;
     
-    // 确保初始状态是折叠的（默认折叠，特别是错误时）
     if (hasContent) {
         const timeline = document.getElementById(detailsId + '-timeline');
         if (timeline) {
-            // 如果有错误，确保折叠；否则也默认折叠
             timeline.classList.remove('expanded');
         }
         
@@ -1363,9 +1322,46 @@ function integrateProgressToMCPSection(progressId, assistantMessageId, mcpExecut
         });
     }
     
-    // 移除原来的进度消息（详情已快照到助手消息下的 process-details）
     removeMessage(progressId);
 }
+
+const PROCESS_DETAILS_PAGE_SIZE = 100;
+
+/**
+ * 分页加载过程详情并增量渲染，避免数百轮迭代一次性阻塞主线程。
+ */
+async function loadProcessDetailsPaginated(assistantMessageId, backendMessageId) {
+    if (!assistantMessageId || !backendMessageId || typeof apiFetch !== 'function' || typeof renderProcessDetails !== 'function') {
+        return;
+    }
+    const PAGE = PROCESS_DETAILS_PAGE_SIZE;
+    let offset = 0;
+    let isFirst = true;
+    while (true) {
+        const res = await apiFetch(
+            '/api/messages/' + encodeURIComponent(String(backendMessageId)) +
+            '/process-details?limit=' + PAGE + '&offset=' + offset
+        );
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error((j && j.error) ? j.error : String(res.status));
+        }
+        const details = (j && Array.isArray(j.processDetails)) ? j.processDetails : [];
+        const hasMore = !!(j && j.hasMore);
+        renderProcessDetails(assistantMessageId, details, {
+            append: !isFirst,
+            markLoaded: !hasMore
+        });
+        if (!hasMore || details.length === 0) {
+            break;
+        }
+        offset += details.length;
+        isFirst = false;
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+}
+
+window.loadProcessDetailsPaginated = loadProcessDetailsPaginated;
 
 // 切换过程详情显示
 function toggleProcessDetails(progressId, assistantMessageId) {
@@ -1383,26 +1379,17 @@ function toggleProcessDetails(progressId, assistantMessageId) {
                 // 正在加载中，避免重复请求
             } else {
                 detailsContainer.dataset.loading = '1';
-                // 先展开容器，显示加载态
                 const timeline = detailsContainer.querySelector('.progress-timeline');
                 if (timeline) {
                     timeline.innerHTML = '<div class="progress-timeline-empty">' + ((typeof window.t === 'function') ? window.t('common.loading') : '加载中…') + '</div>';
                 }
-                apiFetch(`/api/messages/${encodeURIComponent(String(backendMessageId))}/process-details`)
-                    .then(async (res) => {
-                        const j = await res.json().catch(() => ({}));
-                        if (!res.ok) throw new Error((j && j.error) ? j.error : res.status);
-                        const details = (j && Array.isArray(j.processDetails)) ? j.processDetails : [];
-                        // 重新渲染详情（renderProcessDetails 会清掉 lazy 标记并写入 loaded）
-                        renderProcessDetails(assistantMessageId, details);
-                    })
+                loadProcessDetailsPaginated(assistantMessageId, backendMessageId)
                     .catch((e) => {
                         console.error('加载过程详情失败:', e);
                         const tl = detailsContainer.querySelector('.progress-timeline');
                         if (tl) {
                             tl.innerHTML = '<div class="progress-timeline-empty">' + ((typeof window.t === 'function') ? window.t('chat.noProcessDetail') : '暂无过程详情（加载失败）') + '</div>';
                         }
-                        // 失败时保留 lazy 状态，允许用户重试
                         detailsContainer.dataset.lazyNotLoaded = '1';
                         detailsContainer.dataset.loaded = '0';
                     })
@@ -2756,12 +2743,16 @@ async function restoreHitlInlineForConversation(conversationId) {
             if (detailsContainer.dataset.lazyNotLoaded === '1' && detailsContainer.dataset.loaded !== '1') {
                 try {
                     detailsContainer.dataset.loading = '1';
-                    const res = await apiFetch('/api/messages/' + encodeURIComponent(backendMsgId) + '/process-details');
-                    const j = await res.json().catch(function () { return {}; });
-                    if (!res.ok) throw new Error((j && j.error) ? j.error : String(res.status));
-                    const details = (j && Array.isArray(j.processDetails)) ? j.processDetails : [];
-                    if (typeof renderProcessDetails === 'function') {
-                        renderProcessDetails(clientMsgId, details);
+                    if (typeof loadProcessDetailsPaginated === 'function') {
+                        await loadProcessDetailsPaginated(clientMsgId, backendMsgId);
+                    } else {
+                        const res = await apiFetch('/api/messages/' + encodeURIComponent(backendMsgId) + '/process-details');
+                        const j = await res.json().catch(function () { return {}; });
+                        if (!res.ok) throw new Error((j && j.error) ? j.error : String(res.status));
+                        const details = (j && Array.isArray(j.processDetails)) ? j.processDetails : [];
+                        if (typeof renderProcessDetails === 'function') {
+                            renderProcessDetails(clientMsgId, details);
+                        }
                     }
                 } catch (e) {
                     console.error('加载过程详情失败（HITL 恢复）:', e);
@@ -5467,6 +5458,22 @@ function refreshProgressAndTimelineI18n() {
         const timeline = document.getElementById(detailsId) && document.getElementById(detailsId).querySelector('.progress-timeline');
         const expanded = timeline && timeline.classList.contains('expanded');
         span.textContent = expanded ? _t('tasks.collapseDetail') : _t('chat.expandDetail');
+    });
+
+    document.querySelectorAll('#chat-messages .message.assistant').forEach(function (msgEl) {
+        if (typeof window.syncMcpToolsToggleButton === 'function') {
+            window.syncMcpToolsToggleButton(msgEl);
+        }
+    });
+
+    const copyLabel = _t('common.copy');
+    const copyTitle = _t('chat.copyMessageTitle');
+    document.querySelectorAll('#chat-messages .message-copy-btn').forEach(function (btn) {
+        if (btn.dataset.copySuccessActive === '1') return;
+        const span = btn.querySelector('span');
+        if (span) span.textContent = copyLabel;
+        btn.title = copyTitle;
+        btn.setAttribute('aria-label', copyTitle);
     });
 }
 

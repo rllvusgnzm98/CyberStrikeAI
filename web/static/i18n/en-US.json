@@ -530,6 +530,8 @@
     "noMatchTools": "No matching tools",
     "penetrationTestDetail": "Penetration test details",
     "expandDetail": "Expand details",
+    "toolExecutionsCount": "{{n}} tool runs",
+    "collapseToolExecutions": "Collapse tool runs",
     "noProcessDetail": "No process details (execution may be too fast or no detailed events)",
     "copyMessageTitle": "Copy message",
     "deleteTurnTitle": "Delete this turn",

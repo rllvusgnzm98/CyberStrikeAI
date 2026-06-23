@@ -2456,16 +2456,68 @@ header {
     flex-shrink: 0;
 }
 
-.mcp-call-buttons {
+.mcp-call-buttons,
+.mcp-call-toolbar {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+    align-items: center;
+}
+
+.mcp-tool-list {
+    display: none;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    width: 100%;
+}
+
+.mcp-tool-list.expanded {
+    display: flex;
+}
+
+.mcp-tools-toggle-btn {
+    background: rgba(25, 118, 210, 0.1) !important;
+    border-color: rgba(25, 118, 210, 0.35) !important;
+    color: #1976d2 !important;
+}
+
+.mcp-call-toolbar .process-detail-btn,
+.mcp-call-toolbar .mcp-tools-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 6px 12px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.25;
+    box-sizing: border-box;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.mcp-call-toolbar .process-detail-btn span,
+.mcp-call-toolbar .mcp-tools-toggle-btn span {
+    display: inline-flex;
+    align-items: center;
+    line-height: 1.25;
+}
+
+.mcp-tools-toggle-btn:hover {
+    background: rgba(25, 118, 210, 0.18) !important;
+    border-color: #1976d2 !important;
+    color: #1565c0 !important;
 }
 
 .process-detail-btn {
     background: rgba(156, 39, 176, 0.1) !important;
     border-color: rgba(156, 39, 176, 0.3) !important;
     color: #9c27b0 !important;
+}
+
+.mcp-call-toolbar .process-detail-btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;

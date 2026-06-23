@@ -518,6 +518,8 @@
     "noMatchTools": "没有匹配的工具",
     "penetrationTestDetail": "渗透测试详情",
     "expandDetail": "展开详情",
+    "toolExecutionsCount": "{{n}}次工具执行",
+    "collapseToolExecutions": "收起工具执行",
     "noProcessDetail": "暂无过程详情（可能执行过快或未触发详细事件）",
     "copyMessageTitle": "复制消息内容",
     "deleteTurnTitle": "删除本轮对话",
