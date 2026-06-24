@@ -20,7 +20,8 @@ func TestDeleteConversationRemovesEinoScopedDirs(t *testing.T) {
 	plantaskBase := filepath.Join(tmp, "skills", ".eino", "plantask")
 	checkpointBase := filepath.Join(tmp, "eino-checkpoints")
 	reductionBase := filepath.Join(tmp, "reduction")
-	db.SetEinoConversationDirs(plantaskBase, checkpointBase, reductionBase)
+	workspaceBase := filepath.Join(tmp, "workspace")
+	db.SetEinoConversationDirs(plantaskBase, checkpointBase, reductionBase, workspaceBase)
 
 	conv, err := db.CreateConversation("cleanup test", ConversationCreateMeta{})
 	if err != nil {
@@ -36,6 +37,7 @@ func TestDeleteConversationRemovesEinoScopedDirs(t *testing.T) {
 		{plantaskBase, "task-1.json"},
 		{checkpointBase, "runner-deep.ckpt"},
 		{filepath.Join(reductionBase, "conversations"), "tool-output.txt"},
+		{filepath.Join(workspaceBase, "conversations"), "page.html"},
 	} {
 		dir := filepath.Join(base.root, seg)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -50,7 +52,7 @@ func TestDeleteConversationRemovesEinoScopedDirs(t *testing.T) {
 		t.Fatalf("DeleteConversation: %v", err)
 	}
 
-	for _, base := range []string{db.conversationArtifactsDir, plantaskBase, checkpointBase, filepath.Join(reductionBase, "conversations")} {
+	for _, base := range []string{db.conversationArtifactsDir, plantaskBase, checkpointBase, filepath.Join(reductionBase, "conversations"), filepath.Join(workspaceBase, "conversations")} {
 		dir := filepath.Join(base, seg)
 		if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
 			t.Fatalf("expected removed dir %s, stat err=%v", dir, statErr)
@@ -68,7 +70,8 @@ func TestDeleteProjectRemovesReductionDir(t *testing.T) {
 	defer db.Close()
 
 	reductionBase := filepath.Join(tmp, "reduction")
-	db.SetEinoConversationDirs("", "", reductionBase)
+	workspaceBase := filepath.Join(tmp, "workspace")
+	db.SetEinoConversationDirs("", "", reductionBase, workspaceBase)
 
 	project, err := db.CreateProject(&Project{Name: "cleanup test"})
 	if err != nil {
@@ -82,6 +85,13 @@ func TestDeleteProjectRemovesReductionDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(reductionDir, "call-1.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
+	workspaceDir := filepath.Join(workspaceBase, "projects", seg, "downloads")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", workspaceDir, err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceDir, "app.js"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write workspace: %v", err)
+	}
 
 	if err := db.DeleteProject(project.ID); err != nil {
 		t.Fatalf("DeleteProject: %v", err)
@@ -90,5 +100,9 @@ func TestDeleteProjectRemovesReductionDir(t *testing.T) {
 	projectReductionDir := filepath.Join(reductionBase, "projects", seg)
 	if _, statErr := os.Stat(projectReductionDir); !os.IsNotExist(statErr) {
 		t.Fatalf("expected removed dir %s, stat err=%v", projectReductionDir, statErr)
+	}
+	projectWorkspaceDir := filepath.Join(workspaceBase, "projects", seg)
+	if _, statErr := os.Stat(projectWorkspaceDir); !os.IsNotExist(statErr) {
+		t.Fatalf("expected removed dir %s, stat err=%v", projectWorkspaceDir, statErr)
 	}
 }

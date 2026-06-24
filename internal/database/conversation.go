@@ -640,6 +640,16 @@ func (db *DB) einoReductionBaseDir() string {
 	return filepath.Join("tmp", "reduction")
 }
 
+func (db *DB) einoWorkspaceBaseDir() string {
+	if db == nil {
+		return ""
+	}
+	if base := strings.TrimSpace(db.einoWorkspaceRootDir); base != "" {
+		return base
+	}
+	return filepath.Join("tmp", "workspace")
+}
+
 func (db *DB) removeConversationScopedDirs(conversationID, projectID string) {
 	// summarization transcript, etc.
 	db.removeConversationScopedDir(db.conversationArtifactsDir, conversationID, "conversation_artifacts")
@@ -652,6 +662,8 @@ func (db *DB) removeConversationScopedDirs(conversationID, projectID string) {
 	if strings.TrimSpace(projectID) == "" {
 		reductionBase := filepath.Join(db.einoReductionBaseDir(), "conversations")
 		db.removeConversationScopedDir(reductionBase, conversationID, "reduction")
+		workspaceBase := filepath.Join(db.einoWorkspaceBaseDir(), "conversations")
+		db.removeConversationScopedDir(workspaceBase, conversationID, "workspace")
 	}
 }
 
@@ -659,6 +671,9 @@ func (db *DB) removeProjectScopedDirs(projectID string) {
 	// Eino reduction persisted tool outputs (tmp/reduction/projects/<id>/).
 	reductionBase := filepath.Join(db.einoReductionBaseDir(), "projects")
 	db.removeConversationScopedDir(reductionBase, projectID, "reduction")
+	// Agent download/analysis workspace (tmp/workspace/projects/<id>/).
+	workspaceBase := filepath.Join(db.einoWorkspaceBaseDir(), "projects")
+	db.removeConversationScopedDir(workspaceBase, projectID, "workspace")
 }
 
 // SaveAgentTrace 保存最后一轮代理消息轨迹与助手输出摘要。

@@ -52,6 +52,7 @@ type DB struct {
 	einoPlantaskBaseDir      string // skills_dir + plantask_rel_dir (per-conversation subdirs)
 	einoCheckpointBaseDir    string // checkpoint_dir root (per-conversation subdirs)
 	einoReductionRootDir     string // reduction_root_dir or default tmp/reduction (conversations/<id> subdirs)
+	einoWorkspaceRootDir     string // workspace_root_dir or default tmp/workspace (projects|conversations/<id> subdirs)
 	checkpointLoopName       string
 	checkpointStop           chan struct{}
 	checkpointDone           chan struct{}
@@ -161,13 +162,15 @@ func NewDB(dbPath string, logger *zap.Logger) (*DB, error) {
 // SetEinoConversationDirs configures best-effort filesystem cleanup on DeleteConversation.
 // plantaskBase is skills_root/plantask_rel (no conversation id); checkpointBase is checkpoint_dir root.
 // reductionRoot is reduction_root_dir from config; empty uses tmp/reduction (conversation-scoped subdirs only).
-func (db *DB) SetEinoConversationDirs(plantaskBase, checkpointBase, reductionRoot string) {
+// workspaceRoot is agent.workspace_root_dir from config; empty uses tmp/workspace.
+func (db *DB) SetEinoConversationDirs(plantaskBase, checkpointBase, reductionRoot, workspaceRoot string) {
 	if db == nil {
 		return
 	}
 	db.einoPlantaskBaseDir = strings.TrimSpace(plantaskBase)
 	db.einoCheckpointBaseDir = strings.TrimSpace(checkpointBase)
 	db.einoReductionRootDir = strings.TrimSpace(reductionRoot)
+	db.einoWorkspaceRootDir = strings.TrimSpace(workspaceRoot)
 }
 
 // initTables 初始化数据库表
