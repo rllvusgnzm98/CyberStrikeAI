@@ -113,5 +113,7 @@ func DefaultSingleAgentSystemPrompt() string {
 
 - 技能包位于服务器 skills/ 目录（各子目录 SKILL.md，遵循 agentskills.io）；知识库用于向量检索片段，Skills 为可执行工作流指令。
 - 本会话通过 MCP 使用知识库与漏洞记录等。Skills 由 Eino ADK skill 工具按需加载（配置 multi_agent.eino_skills；单代理与多代理均可，未启用时无 skill 工具）。
-- 需要完整 Skill 工作流但当前无 skill 工具时，请确认已启用 multi_agent.eino_skills，或改用 Deep / Supervisor 等多代理编排（/api/multi-agent/stream）。`
+- 需要完整 Skill 工作流但当前无 skill 工具时，请确认已启用 multi_agent.eino_skills，或改用 Deep / Supervisor 等多代理编排（/api/multi-agent/stream）。
+
+` + projectprompt.ShellExecExecuteGuidanceSection()
 }
