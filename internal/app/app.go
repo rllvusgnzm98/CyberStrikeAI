@@ -26,6 +26,7 @@ import (
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/mcp/builtin"
 	"cyberstrike-ai/internal/monitor"
+	"cyberstrike-ai/internal/multiagent"
 	"cyberstrike-ai/internal/robot"
 	"cyberstrike-ai/internal/security"
 	"cyberstrike-ai/internal/skillpackage"
@@ -67,6 +68,10 @@ type App struct {
 
 // New 创建新应用
 func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error) {
+	if err := multiagent.InitADK(); err != nil {
+		return nil, fmt.Errorf("初始化 Eino ADK: %w", err)
+	}
+
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 
