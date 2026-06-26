@@ -20,14 +20,24 @@ func prepareShellCmdSession(cmd *exec.Cmd) error {
 	return nil
 }
 
-// terminateCmdTree 使用 taskkill /F /T 终止进程及其子进程（Windows 上 Process.Kill 无法保证杀掉 python 等孙进程）。
-func terminateCmdTree(cmd *exec.Cmd) {
-	if cmd == nil || cmd.Process == nil {
+// terminateProcessGroup 使用 taskkill /F /T 终止进程及其子进程；rootPID 为 0 时回退到 cmd.Process.Pid。
+func terminateProcessGroup(rootPID int, cmd *exec.Cmd) {
+	pid := rootPID
+	if pid <= 0 && cmd != nil && cmd.Process != nil {
+		pid = cmd.Process.Pid
+	}
+	if pid <= 0 {
 		return
 	}
-	pid := cmd.Process.Pid
 	tk := exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(pid))
 	if err := tk.Run(); err != nil {
-		_ = cmd.Process.Kill()
+		if cmd != nil && cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
 	}
+}
+
+// terminateCmdTree 使用 taskkill /F /T 终止进程及其子进程（Windows 上 Process.Kill 无法保证杀掉 python 等孙进程）。
+func terminateCmdTree(cmd *exec.Cmd) {
+	terminateProcessGroup(0, cmd)
 }

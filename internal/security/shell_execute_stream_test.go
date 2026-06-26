@@ -115,3 +115,38 @@ func TestEinoStreamingShell_StderrWhileStdoutBlocks(t *testing.T) {
 		t.Fatalf("expected early stderr, got: %q", got.String())
 	}
 }
+
+// TestEinoStreamingShell_BackgroundJobDoesNotHoldPipe 模拟 cmd & 后继续前台逻辑：重定向后应快速结束。
+func TestEinoStreamingShell_BackgroundJobDoesNotHoldPipe(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping shell integration in -short")
+	}
+	shell := NewEinoStreamingShell()
+	cmd := `(sh -c 'printf x; sleep 120') & echo started; sleep 0`
+	sr, err := shell.ExecuteStreaming(context.Background(), &filesystem.ExecuteRequest{Command: cmd})
+	if err != nil {
+		t.Fatalf("ExecuteStreaming: %v", err)
+	}
+	defer sr.Close()
+
+	start := time.Now()
+	var got strings.Builder
+	for {
+		resp, rerr := sr.Recv()
+		if errors.Is(rerr, io.EOF) {
+			break
+		}
+		if rerr != nil {
+			t.Fatalf("recv: %v", rerr)
+		}
+		if resp != nil && resp.Output != "" {
+			got.WriteString(resp.Output)
+		}
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("expected fast completion, took %v output=%q", time.Since(start), got.String())
+	}
+	if !strings.Contains(got.String(), "started") {
+		t.Fatalf("expected foreground echo, got: %q", got.String())
+	}
+}

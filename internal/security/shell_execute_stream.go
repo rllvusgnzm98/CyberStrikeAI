@@ -27,6 +27,11 @@ func TerminateShellCmdTree(cmd *exec.Cmd) {
 	terminateCmdTree(cmd)
 }
 
+// TerminateShellCmdSession 使用 Start 时缓存的进程组 ID 终止（shell 已退出时仍有效）。
+func TerminateShellCmdSession(session *ShellSession) {
+	TerminateShellSession(session)
+}
+
 // EinoStreamingShell 为 Eino ADK execute 工具提供流式 shell，行为与 exec 对齐：
 // 并发读取 stdout/stderr（定长块，非按行），避免官方 local.ExecuteStreaming 先排空 stdout
 // 导致 stderr 错误（如 sudo 密码提示）长时间不可见、UI 一直显示「执行中」。
@@ -55,8 +60,10 @@ func (s *EinoStreamingShell) ExecuteStreaming(ctx context.Context, input *filesy
 func runShellInBackground(ctx context.Context, command string, w *schema.StreamWriter[*filesystem.ExecuteResponse]) {
 	defer w.Close()
 
+	command = PrepareShellCommandForExecute(command)
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
-	ConfigureShellCmdForAgentExecute(cmd)
+	applyDefaultTerminalEnv(cmd)
+	attachNonInteractiveStdin(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		_ = w.Send(nil, fmt.Errorf("failed to create stdout pipe: %w", err))
@@ -68,7 +75,8 @@ func runShellInBackground(ctx context.Context, command string, w *schema.StreamW
 		_ = w.Send(nil, fmt.Errorf("failed to create stderr pipe: %w", err))
 		return
 	}
-	if err := cmd.Start(); err != nil {
+	session, err := StartShellSession(cmd)
+	if err != nil {
 		_ = stdout.Close()
 		_ = stderr.Close()
 		_ = w.Send(nil, fmt.Errorf("failed to start command: %w", err))
@@ -78,14 +86,14 @@ func runShellInBackground(ctx context.Context, command string, w *schema.StreamW
 	done := make(chan struct{})
 	go func() {
 		drainShellPipes(stdout, stderr)
-		_ = cmd.Wait()
+		_ = session.Wait()
 		close(done)
 	}()
 
 	select {
 	case <-done:
 	case <-ctx.Done():
-		TerminateShellCmdTree(cmd)
+		TerminateShellCmdSession(session)
 	}
 
 	exitCode := 0
@@ -112,8 +120,10 @@ func drainShellPipes(stdout, stderr io.Reader) {
 func streamShellForeground(ctx context.Context, command string, w *schema.StreamWriter[*filesystem.ExecuteResponse]) {
 	defer w.Close()
 
+	command = PrepareShellCommandForExecute(command)
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
-	ConfigureShellCmdForAgentExecute(cmd)
+	applyDefaultTerminalEnv(cmd)
+	attachNonInteractiveStdin(cmd)
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -126,7 +136,8 @@ func streamShellForeground(ctx context.Context, command string, w *schema.Stream
 		_ = w.Send(nil, fmt.Errorf("failed to create stderr pipe: %w", err))
 		return
 	}
-	if err := cmd.Start(); err != nil {
+	session, err := StartShellSession(cmd)
+	if err != nil {
 		_ = stdoutPipe.Close()
 		_ = stderrPipe.Close()
 		_ = w.Send(nil, fmt.Errorf("failed to start command: %w", err))
@@ -137,7 +148,7 @@ func streamShellForeground(ctx context.Context, command string, w *schema.Stream
 	go func() {
 		select {
 		case <-ctx.Done():
-			TerminateShellCmdTree(cmd)
+			TerminateShellCmdSession(session)
 		case <-stopWatch:
 		}
 	}()
@@ -174,12 +185,12 @@ func streamShellForeground(ctx context.Context, command string, w *schema.Stream
 		}
 		hadOutput = true
 		if w.Send(&filesystem.ExecuteResponse{Output: chunk}, nil) {
-			TerminateShellCmdTree(cmd)
+			TerminateShellCmdSession(session)
 			return
 		}
 	}
 
-	waitErr := cmd.Wait()
+	waitErr := session.Wait()
 	if waitErr == nil {
 		exitCode := 0
 		_ = w.Send(&filesystem.ExecuteResponse{ExitCode: &exitCode}, nil)

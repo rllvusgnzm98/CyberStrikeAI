@@ -691,83 +691,21 @@ func (e *Executor) formatParamValue(param config.ParameterConfig, value interfac
 // IsBackgroundShellCommand 检测命令是否为完全后台命令（末尾有独立 &，且不在引号内）。
 // command1 & command2 不算完全后台（command2 仍在前台执行）。
 func IsBackgroundShellCommand(command string) bool {
-	// 移除首尾空格
 	command = strings.TrimSpace(command)
 	if command == "" {
 		return false
 	}
-
-	// 检查命令中所有不在引号内的 & 符号
-	// 找到最后一个 & 符号，检查它是否在命令末尾
-	inSingleQuote := false
-	inDoubleQuote := false
-	escaped := false
-	lastAmpersandPos := -1
-
-	for i, r := range command {
-		if escaped {
-			escaped = false
-			continue
-		}
-		if r == '\\' {
-			escaped = true
-			continue
-		}
-		if r == '\'' && !inDoubleQuote {
-			inSingleQuote = !inSingleQuote
-			continue
-		}
-		if r == '"' && !inSingleQuote {
-			inDoubleQuote = !inDoubleQuote
-			continue
-		}
-		if r == '&' && !inSingleQuote && !inDoubleQuote {
-			// 检查 & 前后是否有空格或换行（确保是独立的 &，而不是变量名的一部分）
-			isStandalone := false
-
-			// 检查前面：空格、制表符、换行符，或者是命令开头
-			if i == 0 {
-				isStandalone = true
-			} else {
-				prev := command[i-1]
-				if prev == ' ' || prev == '\t' || prev == '\n' || prev == '\r' {
-					isStandalone = true
-				}
-			}
-
-			// 检查后面：空格、制表符、换行符，或者是命令末尾
-			if isStandalone {
-				if i == len(command)-1 {
-					// 在末尾，肯定是独立的 &
-					lastAmpersandPos = i
-				} else {
-					next := command[i+1]
-					if next == ' ' || next == '\t' || next == '\n' || next == '\r' {
-						// 后面有空格，是独立的 &
-						lastAmpersandPos = i
-					}
-				}
-			}
-		}
-	}
-
-	// 如果没有找到 & 符号，不是后台命令
-	if lastAmpersandPos == -1 {
+	positions := findStandaloneAmpersandPositions(command)
+	if len(positions) == 0 {
 		return false
 	}
-
-	// 检查最后一个 & 后面是否还有非空内容
-	afterAmpersand := strings.TrimSpace(command[lastAmpersandPos+1:])
-	if afterAmpersand == "" {
-		// & 在末尾或后面只有空白字符，这是完全后台命令
-		// 检查 & 前面是否有内容
-		beforeAmpersand := strings.TrimSpace(command[:lastAmpersandPos])
-		return beforeAmpersand != ""
+	last := positions[len(positions)-1]
+	afterAmpersand := strings.TrimSpace(command[last+1:])
+	if afterAmpersand != "" {
+		return false
 	}
-
-	// 如果 & 后面还有非空内容，说明是 command1 & command2 的情况
-	// 这种情况下，command2会在前台执行，所以不算完全后台命令
-	return false
+	beforeAmpersand := strings.TrimSpace(command[:last])
+	return beforeAmpersand != ""
 }
 
 // executeSystemCommand 执行系统命令
@@ -803,7 +741,7 @@ func (e *Executor) executeSystemCommand(ctx context.Context, args map[string]int
 		zap.String("command", command),
 	)
 
-	command = PrepareNonInteractiveShellCommand(command)
+	command = PrepareShellCommandForExecute(command)
 
 	// 获取shell类型（可选，默认为sh）
 	shell := "sh"
@@ -844,10 +782,8 @@ func (e *Executor) executeSystemCommand(ctx context.Context, args map[string]int
 		commandWithoutAmpersand := strings.TrimSuffix(strings.TrimSpace(command), "&")
 		commandWithoutAmpersand = strings.TrimSpace(commandWithoutAmpersand)
 
-		// 构建新命令：将用户命令置于独立重定向的后台作业，再 echo $pid。
-		// 若子进程与 echo 共享同一 stdout 管道，且长时间不向 stdout 写入换行，
-		// bufio.ReadString('\n') 会永久阻塞（例如 beacon 持续写二进制/单行日志）。
-		pidCommand := fmt.Sprintf("%s </dev/null >/dev/null 2>&1 & pid=$!; echo $pid", commandWithoutAmpersand)
+		// 构建新命令：后台作业重定向标准流后 echo $pid（与 RedirectBackgroundJobStdio 一致）。
+		pidCommand := RedirectBackgroundJobStdio(commandWithoutAmpersand+" &") + " pid=$!; echo $pid"
 
 		// 创建新命令来获取PID
 		var pidCmd *exec.Cmd
@@ -1029,27 +965,25 @@ func (e *Executor) executeSystemCommand(ctx context.Context, args map[string]int
 // 非流式路径不使用双流管道 fan-in，避免 stderr 撑满管道缓冲区时与 stdout 互相阻塞导致死锁。
 // 无输出空闲检测由上层 agent.tool_timeout_minutes 兜底，不改变原 CombinedOutput 语义。
 func combinedOutputCancellable(ctx context.Context, cmd *exec.Cmd) (string, error) {
-	if err := prepareShellCmdSession(cmd); err != nil {
-		return "", err
-	}
 	var stdoutBuf, stderrBuf strings.Builder
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 
-	if err := cmd.Start(); err != nil {
+	session, err := StartShellSession(cmd)
+	if err != nil {
 		return "", err
 	}
 
 	done := make(chan error, 1)
 	go func() {
-		done <- cmd.Wait()
+		done <- session.Wait()
 	}()
 
 	stopWatch := make(chan struct{})
 	go func() {
 		select {
 		case <-ctx.Done():
-			terminateCmdTree(cmd)
+			TerminateShellCmdSession(session)
 		case <-stopWatch:
 		}
 	}()
@@ -1078,9 +1012,6 @@ func joinCommandOutput(stdout, stderr string) string {
 // streamCommandOutput 以“边读边回调”的方式读取命令 stdout/stderr。
 // 使用定长块读取，避免按行读取在无换行输出时永久阻塞；ctx 取消时终止进程树。
 func streamCommandOutput(ctx context.Context, cmd *exec.Cmd, cb ToolOutputCallback, noOutputSec int) (string, error) {
-	if err := prepareShellCmdSession(cmd); err != nil {
-		return "", err
-	}
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", err
@@ -1090,7 +1021,8 @@ func streamCommandOutput(ctx context.Context, cmd *exec.Cmd, cb ToolOutputCallba
 		_ = stdoutPipe.Close()
 		return "", err
 	}
-	if err := cmd.Start(); err != nil {
+	session, err := StartShellSession(cmd)
+	if err != nil {
 		_ = stdoutPipe.Close()
 		_ = stderrPipe.Close()
 		return "", err
@@ -1100,7 +1032,7 @@ func streamCommandOutput(ctx context.Context, cmd *exec.Cmd, cb ToolOutputCallba
 	go func() {
 		select {
 		case <-ctx.Done():
-			terminateCmdTree(cmd)
+			TerminateShellCmdSession(session)
 		case <-stopWatch:
 		}
 	}()
@@ -1152,13 +1084,13 @@ func streamCommandOutput(ctx context.Context, cmd *exec.Cmd, cb ToolOutputCallba
 	}
 
 	fireInactivity := func() {
-		terminateCmdTree(cmd)
+		TerminateShellCmdSession(session)
 		msg := ShellNoOutputTimeoutMessage(idleWatch.Sec)
 		outBuilder.WriteString(msg)
 		if cb != nil {
 			cb(msg)
 		}
-		_ = cmd.Wait()
+		_ = session.Wait()
 	}
 
 chunksLoop:
@@ -1169,9 +1101,9 @@ chunksLoop:
 		}
 		select {
 		case <-ctx.Done():
-			terminateCmdTree(cmd)
+			TerminateShellCmdSession(session)
 			flush()
-			_ = cmd.Wait()
+			_ = session.Wait()
 			return outBuilder.String(), ctx.Err()
 		case <-idleCh:
 			fireInactivity()
@@ -1193,7 +1125,7 @@ chunksLoop:
 	flush()
 
 	// 等待命令结束，返回最终退出状态
-	waitErr := cmd.Wait()
+	waitErr := session.Wait()
 	return outBuilder.String(), waitErr
 }
 
@@ -1265,13 +1197,18 @@ func runCommandWithPTY(ctx context.Context, cmd *exec.Cmd, cb ToolOutputCallback
 	}
 	defer func() { _ = ptmx.Close() }()
 
+	rootPID := 0
+	if cmd.Process != nil {
+		rootPID = cmd.Process.Pid
+	}
+
 	// ctx 取消时尽快终止子进程
 	done := make(chan struct{})
 	go func() {
 		select {
 		case <-ctx.Done():
 			_ = ptmx.Close() // 触发读退出
-			terminateCmdTree(cmd)
+			terminateProcessGroup(rootPID, cmd)
 		case <-done:
 		}
 	}()
