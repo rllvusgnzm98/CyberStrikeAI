@@ -173,6 +173,24 @@ function einoMainStreamPlanningTitle(responseData) {
 }
 
 /**
+ * Eino 未捕获助手正文占位文案；终态 response 不应覆盖已有流式 buffer。
+ */
+function isEinoEmptyResponsePlaceholder(text) {
+    if (text == null) return false;
+    const s = String(text);
+    return s.indexOf('no assistant text was captured') !== -1
+        || s.indexOf('未捕获到助手文本输出') !== -1;
+}
+
+function resolveFinalAssistantResponseText(finalMessage, streamState) {
+    const buf = streamState && streamState.buffer != null ? String(streamState.buffer).trim() : '';
+    if (isEinoEmptyResponsePlaceholder(finalMessage) && buf) {
+        return streamState.buffer;
+    }
+    return finalMessage;
+}
+
+/**
  * 主通道 response 结束时：将流式占位条目固化为 planning（与后端 flushResponsePlan 落库类型一致），
  * 避免 integrateProgressToMCPSection 快照前删除占位导致「助手输出」仅刷新后才出现。
  */
@@ -181,8 +199,9 @@ function finalizeMainResponseStreamItem(streamState, finalMessage, responseData)
     const item = document.getElementById(streamState.itemId);
     if (!item || !item.parentNode) return false;
 
-    const fullText = (finalMessage != null && String(finalMessage).trim() !== '')
-        ? String(finalMessage)
+    const resolved = resolveFinalAssistantResponseText(finalMessage, streamState);
+    const fullText = (resolved != null && String(resolved).trim() !== '')
+        ? String(resolved)
         : (streamState.buffer || '');
     if (!String(fullText).trim()) {
         item.parentNode.removeChild(item);
@@ -2414,19 +2433,20 @@ function handleStreamEvent(event, progressElement, progressId,
             const streamState = responseStreamStateByProgressId.get(progressId);
             const existingAssistantId = streamState?.assistantId || getAssistantId();
             let assistantIdFinal = existingAssistantId;
+            const bubbleText = resolveFinalAssistantResponseText(event.message, streamState);
 
             if (!assistantIdFinal) {
-                assistantIdFinal = addMessage('assistant', event.message, mcpIds, progressId);
+                assistantIdFinal = addMessage('assistant', bubbleText, mcpIds, progressId);
                 setAssistantId(assistantIdFinal);
             } else {
                 setAssistantId(assistantIdFinal);
-                updateAssistantBubbleContent(assistantIdFinal, event.message, true);
+                updateAssistantBubbleContent(assistantIdFinal, bubbleText, true);
             }
 
             // 将 response_start/response_delta 占位固化为 planning，与后端落库一致后再快照过程详情
             if (streamState && streamState.itemId) {
                 finalizeMainResponseStreamItem(streamState, event.message, responseData);
-            } else if (event.message && String(event.message).trim()) {
+            } else if (bubbleText && String(bubbleText).trim() && !isEinoEmptyResponsePlaceholder(event.message)) {
                 addTimelineItem(timeline, 'planning', {
                     title: typeof einoMainStreamPlanningTitle === 'function'
                         ? einoMainStreamPlanningTitle(responseData)
