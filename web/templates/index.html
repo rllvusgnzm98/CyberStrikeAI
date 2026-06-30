@@ -1244,6 +1244,18 @@
                                     </select>
                                 </label>
                                 <button type="button" class="btn-secondary" onclick="filterHitlLogs()" data-i18n="hitl.searchApply">搜索</button>
+                                <button type="button" class="btn-secondary btn-delete" onclick="clearHitlLogs()" data-i18n="hitl.clearAll">清空</button>
+                            </div>
+                            <p id="hitl-logs-retention-hint" class="hitl-logs-retention-hint" hidden></p>
+                            <div id="hitl-logs-batch-actions" class="monitor-batch-actions" style="display: none;">
+                                <div class="batch-actions-info">
+                                    <span id="hitl-logs-selected-count" data-i18n="hitl.selectedCount" data-i18n-params='{"count":0}'>已选择 0 项</span>
+                                </div>
+                                <div class="batch-actions-buttons">
+                                    <button type="button" class="btn-secondary" onclick="selectAllHitlLogs()" data-i18n="hitl.selectAll">全选</button>
+                                    <button type="button" class="btn-secondary" onclick="deselectAllHitlLogs()" data-i18n="hitl.deselectAll">取消全选</button>
+                                    <button type="button" class="btn-secondary btn-delete" onclick="batchDeleteHitlLogs()" data-i18n="hitl.batchDelete">批量删除</button>
+                                </div>
                             </div>
                             <div id="hitl-logs-table-wrap" class="hitl-logs-table-wrap">
                                 <div class="loading-spinner" data-i18n="hitl.loading">加载中...</div>

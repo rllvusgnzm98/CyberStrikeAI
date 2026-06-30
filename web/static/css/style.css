@@ -2042,6 +2042,12 @@ header {
     margin-top: 14px;
 }
 
+.hitl-logs-retention-hint {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: #64748b;
+}
+
 .hitl-logs-empty-hint {
     margin: 8px 0 0;
     font-size: 13px;
