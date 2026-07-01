@@ -23,20 +23,59 @@ import (
 )
 
 // einoSummarizeUserInstruction：压缩历史时保留渗透测试与用户约束关键信息。
-const einoSummarizeUserInstruction = `在保持所有关键安全测试信息完整的前提下压缩对话历史。
+// 结构对齐 Eino 最佳实践（禁止工具、<analysis>+<summary>、<all_user_messages>），章节为安全测试领域化。
+const einoSummarizeUserInstruction = `关键：仅以纯文本响应。禁止调用任何工具（read_file、exec、grep、glob、write、edit 等）。
+上述对话中已包含全部待压缩上下文；不要要求用户粘贴历史，不要输出「请提供待压缩的对话历史」等占位/meta 回复。
+工具调用将被拒绝并浪费唯一一次摘要机会。
 
-必须保留：已确认漏洞与攻击路径、工具输出中的核心发现、凭证与认证细节、架构与薄弱点、当前进度、失败尝试与死路、策略决策。
-保留精确技术细节（URL、路径、参数、Payload、版本号、报错原文可摘要但要点不丢）。
-将冗长扫描输出概括为结论；重复发现合并表述。
-已枚举资产须保留**可继承的摘要**：主域、关键子域/主机短表（或数量+代表样例）、高价值目标与已识别服务/端口要点，避免后续子代理因「看不见清单」而重复全量枚举。
+你的任务：在保持所有关键安全测试信息完整的前提下压缩对话历史，使后续代理能无缝继续同一授权测试任务。
 
-用户消息中的约束须精确保留（可摘要表述，但要点不可丢或改写）：
-- 授权测试目标、范围与禁止项（域名、路径、IP、环境）
-- 用户提供的凭证、账号、Cookie、Token（敏感值原文保留）
+压缩原则：
+- 必须保留：已确认漏洞与攻击路径、工具输出核心发现、凭证与认证细节、架构与薄弱点、当前进度、失败尝试与死路、策略决策
+- 保留精确技术细节（URL、路径、参数、Payload、版本号；报错原文可摘要但要点不丢）
+- 冗长扫描输出概括为结论；重复发现合并表述
+- 已枚举资产须保留可继承摘要：主域、关键子域/主机短表（或数量+代表样例）、高价值目标、已识别服务/端口要点
+
+输出格式（严格遵循，仅一轮回复）：
+1. 先输出 <analysis> 块：按时间顺序梳理对话，检查是否涵盖下方各章节要点；analysis 仅供自检，保持简洁（建议 ≤400 字）
+2. 再输出 <summary> 块：按以下章节写入可继承的压缩报告（无信息处写「无」，禁止留空模板占位符）
+
+<summary>
+## 1. 授权范围与约束
+- 目标/范围/禁止项（域名、路径、IP、环境）
+- 凭证/认证信息（账号、Token、Cookie；敏感值原文保留）
 - 用户指定的方法、工具、优先级与待办
-- 用户明确的否定约束（不要测什么、不要用什么手法）
+- 否定约束（不测什么、不用什么手法）
 
-输出须使后续代理能无缝继续同一授权测试任务。`
+## 2. 资产与服务枚举摘要
+- 主域/核心资产、关键子域或主机短表（或数量+代表样例）
+- 高价值目标、已识别服务/端口要点
+- 资产状态（存活/可攻/已排除/待验证）
+
+## 3. 架构与已知薄弱点
+- 技术栈/部署拓扑/信任边界
+- 已识别薄弱点列表
+
+## 4. 已确认漏洞与攻击路径
+- 漏洞名/CVE、URL/路径、参数/Payload、PoC 要点、影响等级
+- 攻击链/利用路径（步骤化）
+
+## 5. 工具核心发现与扫描结论
+- 各工具结论（概括核心输出，非冗长日志）
+- 重复发现合并表述
+
+## 6. 所有用户消息
+<all_user_messages>
+- [逐条列出非 tool 结果的用户消息要点；敏感约束与原文措辞尽量保留]
+</all_user_messages>
+
+## 7. 当前进度、策略决策与下一步
+- 当前位置（已完成/进行中/卡点）
+- 失败尝试与死路（方法、现象/报错摘要、结论）
+- 策略决策与下一步具体操作（须与最近用户请求及未完成任务一致）
+</summary>
+
+提醒：不要调用任何工具；必须基于上文已有对话直接输出 <analysis> 与 <summary>，勿输出 analysis 以外的正文。`
 
 // newEinoSummarizationMiddleware 使用 Eino ADK Summarization 中间件（见 https://www.cloudwego.io/zh/docs/eino/core_modules/eino_adk/eino_adk_chatmodelagentmiddleware/middleware_summarization/）。
 // 触发阈值：估算 token 超过 openai.max_total_tokens * summarization_trigger_ratio（默认 0.8）时摘要。
@@ -150,6 +189,7 @@ func newEinoSummarizationMiddleware(
 			},
 		},
 		Finalize: func(ctx context.Context, originalMessages []adk.Message, summary adk.Message) ([]adk.Message, error) {
+			summary = stripAnalysisFromSummarizationMessage(summary)
 			out, ferr := summarizeFinalizeWithRecentAssistantToolTrail(ctx, originalMessages, summary, tokenCounter, recentTrailMax)
 			if ferr != nil {
 				return nil, ferr
