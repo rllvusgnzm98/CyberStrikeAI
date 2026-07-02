@@ -1,0 +1,67 @@
+name: Cleanup Original CyberStrikeAI Skills
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Remove original CyberStrikeAI skills (superseded by Anthropic Skills)
+        run: |
+          # These are the original CyberStrikeAI built-in skills.
+          # They are replaced by richer Anthropic-Cybersecurity-Skills equivalents.
+          ORIGINAL_SKILLS=(
+            api-security-testing
+            business-logic-testing
+            cloud-security-audit
+            command-injection-testing
+            container-security-testing
+            csrf-testing
+            cyberstrike-eino-demo
+            deserialization-testing
+            file-upload-testing
+            idor-testing
+            incident-response
+            ldap-injection-testing
+            mobile-app-security-testing
+            network-penetration-testing
+            secure-code-review
+            security-automation
+            security-awareness-training
+            sql-injection-testing
+            ssrf-testing
+            vulnerability-assessment
+            xpath-injection-testing
+            xss-testing
+            xxe-testing
+          )
+          for skill in "${ORIGINAL_SKILLS[@]}"; do
+            if [ -d "skills/$skill" ]; then
+              echo "Removing original skill: $skill"
+              rm -rf "skills/$skill"
+            fi
+          done
+
+      - name: Re-sync Anthropic Skills (now without --ignore-existing conflicts)
+        run: |
+          git clone --depth=1 --filter=blob:none --sparse \
+            https://github.com/mukul975/Anthropic-Cybersecurity-Skills upstream-skills
+          cd upstream-skills
+          git sparse-checkout set skills
+          cd ..
+          rsync -av --ignore-existing upstream-skills/skills/ skills/ \
+            --exclude=".git*"
+          rm -rf upstream-skills
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add skills/
+          git diff --staged --quiet || git commit -m "chore: replace original skills with Anthropic Cybersecurity Skills equivalents"
+          git push
