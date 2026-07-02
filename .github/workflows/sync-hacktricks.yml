@@ -9,62 +9,70 @@ jobs:
   sync-hacktricks:
     runs-on: ubuntu-latest
     permissions:
-     contents: write
+name: Sync HackTricks Knowledge Base (Full)
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+jobs:
+  sync-hacktricks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sparse checkout HackTricks topics
+      - name: Clone HackTricks (full, no blobs for images)
         run: |
-          git clone --depth=1 --filter=blob:none --sparse \
+          # --filter=blob:none: clone structure without file blobs first
+          # then only checkout text files we need (auto-fetched on access)
+          git clone --depth=1 --filter=blob:none \
             https://github.com/HackTricks-wiki/hacktricks upstream-ht
-          cd upstream-ht
-          git sparse-checkout set \
-            src/pentesting-web \
-            src/network-services-pentesting \
-            src/windows-hardening \
-            src/linux-hardening \
-            src/cloud-security \
-            src/todo
 
-      - name: Sync into knowledge_base/hacktricks
+      - name: Sync all content into knowledge_base/hacktricks
         run: |
           mkdir -p knowledge_base/hacktricks
-                    rsync -av --update upstream-ht/src/ knowledge_base/hacktricks/
+          rsync -av --update \
+            --exclude="banners/" \
+            --exclude="images/" \
+            --exclude="files/" \
+            upstream-ht/src/ knowledge_base/hacktricks/
           rm -rf upstream-ht
 
-          # Write attribution notice
           cat > knowledge_base/hacktricks/SOURCE.md << 'EOF'
           # HackTricks Knowledge Base
-
-          Content in this directory is sourced from [HackTricks](https://github.com/HackTricks-wiki/hacktricks).
-
-          - **License**: See [HackTricks License](https://github.com/HackTricks-wiki/hacktricks/blob/master/LICENSE.md)
-          - **Source**: https://github.com/HackTricks-wiki/hacktricks
-          - **Auto-synced**: Weekly via GitHub Actions
+          Source: https://github.com/HackTricks-wiki/hacktricks
+          License: https://github.com/HackTricks-wiki/hacktricks/blob/master/LICENSE.md
+          Sync: Full (excludes banners/, images/, files/)
+          Auto-synced weekly via GitHub Actions.
           EOF
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: 'chore: sync hacktricks knowledge base'
+          commit-message: 'chore: sync full hacktricks knowledge base'
           branch: sync/hacktricks-kb
           delete-branch: true
-          title: 'Auto-sync: HackTricks Knowledge Base'
+          title: 'Auto-sync: HackTricks Knowledge Base (Full)'
           body: |
-            ## Auto-sync: HackTricks Knowledge Base
+            ## Auto-sync: HackTricks Full Knowledge Base
 
-            Automated sync of HackTricks content to `knowledge_base/hacktricks/`.
+            Synced all content from [HackTricks-wiki/hacktricks](https://github.com/HackTricks-wiki/hacktricks/tree/master/src).
 
-            **Topics synced:**
-            - `pentesting-web` → Web Application Pentesting
-            - `network-services-pentesting` → Network Services
-            - `windows-hardening` → Windows Security
-            - `linux-hardening` → Linux Security
-            - `cloud-security` → Cloud Security
+            **Included directories (all text content):**
+            - AI, binary-exploitation, blockchain, crypto
+            - generic-hacking, generic-methodologies-and-resources
+            - hardware-physical-access, linux-hardening, macos-hardening
+            - mobile-pentesting, network-services-pentesting, pentesting-web
+            - reversing, stego, todo, welcome, windows-hardening
 
-            **Source**: https://github.com/HackTricks-wiki/hacktricks
+            **Excluded (non-text assets):** banners/, images/, files/
 
-            Please review changes and merge if the content looks correct.
-          labels: 'auto-sync,knowledge-base,hacktricks'
+            Sync mode: incremental (`--update`, existing custom files preserved).
+          labels: 'auto-sync,knowledge-base,hacktricks'    contents: write
+      pull-requests: write
+    
