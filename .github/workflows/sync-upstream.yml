@@ -9,7 +9,81 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     permissions:
+name: Sync Fork with CyberStrikeAI Upstream
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
       contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/Ed1s0nZ/CyberStrikeAI.git || true
+          git fetch upstream main
+
+      - name: Sync upstream (exclude protected dirs)
+        run: |
+          # Checkout upstream files selectively - skip dirs we own
+          git checkout upstream/main -- \
+            agents/ \
+            cmd/ \
+            docs/ \
+            images/ \
+            internal/ \
+            mcp-servers/ \
+            plugins/ \
+            roles/ \
+            tools/ \
+            web/ \
+            LICENSE \
+            README.md \
+            go.mod \
+            go.sum \
+            Makefile \
+            Dockerfile 2>/dev/null || true
+          # NOTE: skills/, knowledge_base/, .github/workflows/ are intentionally excluded
+          # They are managed by sync-skills.yml and sync-hacktricks.yml respectively
+
+      - name: Check for changes
+        id: check
+        run: |
+          git diff --staged --quiet && echo "changed=false" >> $GITHUB_OUTPUT || echo "changed=true" >> $GITHUB_OUTPUT
+          git diff --quiet && echo "unstaged=false" >> $GITHUB_OUTPUT || echo "unstaged=true" >> $GITHUB_OUTPUT
+
+      - name: Create Pull Request
+        if: steps.check.outputs.unstaged == 'true' || steps.check.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: sync upstream CyberStrikeAI core changes'
+          branch: sync/upstream-core
+          delete-branch: true
+          title: 'Auto-sync: CyberStrikeAI Upstream Core Updates'
+          body: |
+            ## Auto-sync: Upstream Core Updates
+
+            Synced latest changes from [Ed1s0nZ/CyberStrikeAI](https://github.com/Ed1s0nZ/CyberStrikeAI).
+
+            **Protected directories (NOT synced, managed separately):**
+            - `skills/` - managed by sync-skills.yml
+            - `knowledge_base/` - managed by sync-hacktricks.yml
+            - `.github/workflows/` - our custom automation
+
+            Please review before merging.
+          labels: 'auto-sync,upstream'      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
