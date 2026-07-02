@@ -9,7 +9,7 @@ jobs:
   sync-hacktricks:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+     contents: write
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +30,7 @@ jobs:
       - name: Sync into knowledge_base/hacktricks
         run: |
           mkdir -p knowledge_base/hacktricks
-          rsync -av --delete upstream-ht/src/ knowledge_base/hacktricks/
+                    rsync -av --update upstream-ht/src/ knowledge_base/hacktricks/
           rm -rf upstream-ht
 
           # Write attribution notice
