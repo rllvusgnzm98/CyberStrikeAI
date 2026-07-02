@@ -10,6 +10,13 @@ type SkillManifest struct {
 	Compatibility string         `yaml:"compatibility,omitempty"`
 	Metadata      map[string]any `yaml:"metadata,omitempty"`
 	AllowedTools  string         `yaml:"allowed-tools,omitempty"`
+		// Anthropic-Cybersecurity-Skills extended fields
+	Domain      string   `yaml:"domain,omitempty"`
+	Subdomain   string   `yaml:"subdomain,omitempty"`
+	Tags        []string `yaml:"tags,omitempty"`
+	Author      string   `yaml:"author,omitempty"`
+	MitreAttack []string `yaml:"mitre_attack,omitempty"`
+	NistCSF     string   `yaml:"nist_csf,omitempty"`
 }
 
 // SkillSummary is API metadata for one skill directory.
