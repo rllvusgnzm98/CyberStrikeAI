@@ -9,17 +9,6 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     permissions:
-name: Sync Fork with CyberStrikeAI Upstream
-
-on:
-  schedule:
-    - cron: '0 2 * * *'
-  workflow_dispatch:
-
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    permissions:
       contents: write
       pull-requests: write
     steps:
