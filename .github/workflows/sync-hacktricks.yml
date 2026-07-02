@@ -62,6 +62,4 @@ jobs:
             **Excluded (non-text assets):** banners/, images/, files/
 
             Sync mode: incremental (`--update`, existing custom files preserved).
-          labels: 'auto-sync,knowledge-base,hacktricks'    contents: write
-      pull-requests: write
-    
+                    labels: 'auto-sync,knowledge-base,hacktricks'
