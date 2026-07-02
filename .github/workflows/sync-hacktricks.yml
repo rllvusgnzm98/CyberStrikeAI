@@ -1,14 +1,3 @@
-name: Sync HackTricks Knowledge Base
-
-on:
-  schedule:
-    - cron: '0 4 * * 1'
-  workflow_dispatch:
-
-jobs:
-  sync-hacktricks:
-    runs-on: ubuntu-latest
-    permissions:
 name: Sync HackTricks Knowledge Base (Full)
 
 on:
