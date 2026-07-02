@@ -1,0 +1,47 @@
+name: Sync Anthropic Cybersecurity Skills
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+jobs:
+  sync-skills:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sparse checkout Anthropic Cybersecurity Skills
+        run: |
+          git clone --depth=1 --filter=blob:none --sparse \
+            https://github.com/mukul975/Anthropic-Cybersecurity-Skills upstream-skills
+          cd upstream-skills
+          git sparse-checkout set skills
+
+      - name: Merge new skills (ignore existing, no overwrite)
+        run: |
+          rsync -av --ignore-existing upstream-skills/skills/ skills/ \
+            --exclude=".git*"
+          rm -rf upstream-skills
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: sync anthropic cybersecurity skills'
+          branch: sync/anthropic-skills
+          delete-branch: true
+          title: 'Auto-sync: Anthropic Cybersecurity Skills'
+          body: |
+            ## Auto-sync: Anthropic Cybersecurity Skills
+
+            Automated sync of upstream skills from [mukul975/Anthropic-Cybersecurity-Skills](https://github.com/mukul975/Anthropic-Cybersecurity-Skills).
+
+            - New skills added to `skills/` directory
+            - Existing custom skills are NOT overwritten
+
+            Please review and merge if everything looks correct.
+          labels: 'auto-sync,skills'
