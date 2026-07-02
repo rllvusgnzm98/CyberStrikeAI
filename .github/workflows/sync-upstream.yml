@@ -72,18 +72,4 @@ jobs:
             - `.github/workflows/` - our custom automation
 
             Please review before merging.
-          labels: 'auto-sync,upstream'      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Sync upstream
-        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
-        with:
-          target_sync_branch: main
-          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
-          upstream_sync_branch: main
-          upstream_sync_repo: Ed1s0nZ/CyberStrikeAI
-          test_mode: false
+                    labels: 'auto-sync,upstream'
