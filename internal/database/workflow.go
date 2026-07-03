@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -321,14 +322,63 @@ func (db *DB) SetWorkflowRunAwaitingHITL(runID, nodeID, pendingJSON string) erro
 	return nil
 }
 
+// RecordWorkflowRunHITLDecision stores a human decision on a paused workflow run.
+func (db *DB) RecordWorkflowRunHITLDecision(runID string, approved bool, comment string) error {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return fmt.Errorf("工作流运行 id 不能为空")
+	}
+	run, err := db.GetWorkflowRun(runID)
+	if err != nil {
+		return err
+	}
+	if run == nil {
+		return fmt.Errorf("工作流运行不存在")
+	}
+	pending := map[string]interface{}{}
+	if strings.TrimSpace(run.PendingHITLJSON) != "" {
+		_ = json.Unmarshal([]byte(run.PendingHITLJSON), &pending)
+	}
+	if approved {
+		pending["decision"] = "approved"
+	} else {
+		pending["decision"] = "rejected"
+	}
+	pending["comment"] = strings.TrimSpace(comment)
+	raw, _ := json.Marshal(pending)
+	_, err = db.Exec(
+		`UPDATE workflow_runs SET pending_hitl_json = ? WHERE id = ? AND status = 'awaiting_hitl'`,
+		string(raw), runID,
+	)
+	if err != nil {
+		return fmt.Errorf("记录工作流审批决定失败: %w", err)
+	}
+	return nil
+}
+
 func (db *DB) ListWorkflowRunsAwaitingHITL(limit int) ([]*WorkflowRun, error) {
+	return db.ListWorkflowRunsAwaitingHITLFiltered("", limit)
+}
+
+// ListWorkflowRunsAwaitingHITLFiltered returns awaiting_hitl runs, optionally scoped to a conversation.
+func (db *DB) ListWorkflowRunsAwaitingHITLFiltered(conversationID string, limit int) ([]*WorkflowRun, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := db.Query(
-		`SELECT `+workflowRunColumns+` FROM workflow_runs WHERE status = 'awaiting_hitl' ORDER BY started_at DESC LIMIT ?`,
-		limit,
-	)
+	conversationID = strings.TrimSpace(conversationID)
+	var rows *sql.Rows
+	var err error
+	if conversationID != "" {
+		rows, err = db.Query(
+			`SELECT `+workflowRunColumns+` FROM workflow_runs WHERE status = 'awaiting_hitl' AND conversation_id = ? ORDER BY started_at DESC LIMIT ?`,
+			conversationID, limit,
+		)
+	} else {
+		rows, err = db.Query(
+			`SELECT `+workflowRunColumns+` FROM workflow_runs WHERE status = 'awaiting_hitl' ORDER BY started_at DESC LIMIT ?`,
+			limit,
+		)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("查询等待审批的工作流运行失败: %w", err)
 	}
