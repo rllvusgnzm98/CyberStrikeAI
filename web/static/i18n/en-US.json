@@ -1316,6 +1316,40 @@
         "appSecretPlaceholder": "Lark/Feishu App Secret",
         "verifyTokenLabel": "Verify Token (Optional)",
         "verifyTokenPlaceholder": "Event subscription Verification Token"
+      },
+      "telegram": {
+        "title": "Telegram",
+        "subtitle": "Bot API long polling; direct chat and group @",
+        "enabled": "Enable Telegram bot",
+        "botToken": "Bot Token",
+        "botTokenHint": "Receives via getUpdates long poll; no public callback URL needed",
+        "botUsername": "Bot Username (optional)",
+        "allowGroup": "Allow group chat (respond to @ only)"
+      },
+      "slack": {
+        "title": "Slack",
+        "subtitle": "Socket Mode; no public callback URL needed",
+        "enabled": "Enable Slack bot",
+        "botToken": "Bot Token (xoxb-)",
+        "appToken": "App-Level Token (xapp-)",
+        "appTokenHint": "Requires connections:write scope for Socket Mode"
+      },
+      "discord": {
+        "title": "Discord",
+        "subtitle": "Gateway WebSocket; DMs and server @",
+        "enabled": "Enable Discord bot",
+        "botToken": "Bot Token",
+        "botTokenHint": "Create bot in Developer Portal; enable Message Content Intent",
+        "allowGuild": "Allow guild channels (respond to @ only)"
+      },
+      "qq": {
+        "title": "QQ Bot",
+        "subtitle": "QQ Open Platform WebSocket; C2C and group @",
+        "enabled": "Enable QQ bot",
+        "appId": "App ID",
+        "clientSecret": "Client Secret",
+        "secretHint": "From QQ Bot Open Platform; use sandbox before going live",
+        "sandbox": "Sandbox environment"
       }
     },
     "apply": {

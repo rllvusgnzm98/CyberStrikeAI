@@ -1304,6 +1304,40 @@
         "appSecretPlaceholder": "飞书应用 App Secret",
         "verifyTokenLabel": "Verify Token（可选）",
         "verifyTokenPlaceholder": "事件订阅 Verification Token"
+      },
+      "telegram": {
+        "title": "Telegram",
+        "subtitle": "Bot API 长轮询，私聊与群聊 @",
+        "enabled": "启用 Telegram 机器人",
+        "botToken": "Bot Token",
+        "botTokenHint": "通过 getUpdates 长轮询收消息，无需公网回调",
+        "botUsername": "Bot Username（可选）",
+        "allowGroup": "允许群聊（仅响应 @ 机器人）"
+      },
+      "slack": {
+        "title": "Slack",
+        "subtitle": "Socket Mode，无需公网回调",
+        "enabled": "启用 Slack 机器人",
+        "botToken": "Bot Token (xoxb-)",
+        "appToken": "App-Level Token (xapp-)",
+        "appTokenHint": "需 connections:write 权限，用于 Socket Mode"
+      },
+      "discord": {
+        "title": "Discord",
+        "subtitle": "Gateway WebSocket，私聊与服务器 @",
+        "enabled": "启用 Discord 机器人",
+        "botToken": "Bot Token",
+        "botTokenHint": "开发者门户创建 Bot，开启 Message Content Intent",
+        "allowGuild": "允许服务器频道（仅响应 @ 机器人）"
+      },
+      "qq": {
+        "title": "QQ 机器人",
+        "subtitle": "QQ 开放平台 WebSocket，C2C 与群 @",
+        "enabled": "启用 QQ 机器人",
+        "appId": "App ID",
+        "clientSecret": "Client Secret",
+        "secretHint": "从 QQ 机器人开放平台获取；上线前可勾选沙箱",
+        "sandbox": "沙箱环境"
       }
     },
     "apply": {
