@@ -185,8 +185,9 @@ type AgentHandler struct {
 	agentsMarkdownDir string // 多代理：Markdown 子 Agent 目录（绝对路径，空则不从磁盘合并）
 	batchCronParser   cron.Parser
 	// hitlWhitelistSaver 侧栏「应用」HITL 时将会话增量白名单合并写入 config.yaml（可选）
-	hitlWhitelistSaver HitlToolWhitelistSaver
-	hitlStrategySaver  HitlAuditStrategySaver
+	hitlWhitelistSaver       HitlToolWhitelistSaver
+	hitlStrategySaver        HitlAuditStrategySaver
+	hitlDefaultReviewerSaver HitlDefaultReviewerSaver
 	auditLLM           *openai.Client
 	audit              *audit.Service
 }
@@ -286,6 +287,23 @@ func (h *AgentHandler) SetAgentsMarkdownDir(absDir string) {
 // SetHitlToolWhitelistSaver 设置 HITL 白名单落盘（与 ConfigHandler 配合，避免循环引用用接口）
 func (h *AgentHandler) SetHitlToolWhitelistSaver(s HitlToolWhitelistSaver) {
 	h.hitlWhitelistSaver = s
+}
+
+// HitlDefaultReviewerSaver 持久化全局默认审批方到 config.yaml。
+type HitlDefaultReviewerSaver interface {
+	UpdateHitlDefaultReviewer(reviewer string) error
+}
+
+// SetHitlDefaultReviewerSaver 设置 HITL 默认审批方落盘。
+func (h *AgentHandler) SetHitlDefaultReviewerSaver(s HitlDefaultReviewerSaver) {
+	h.hitlDefaultReviewerSaver = s
+}
+
+func (h *AgentHandler) hitlEffectiveDefaultReviewer() string {
+	if h != nil && h.config != nil {
+		return normalizeHitlReviewer(h.config.Hitl.EffectiveDefaultReviewer())
+	}
+	return "human"
 }
 
 // HITLNeedsToolApproval 供 C2 危险任务门控：与会话侧人机协同及免审批白名单判定一致。
@@ -1511,6 +1529,10 @@ func (h *AgentHandler) SubscribeAgentTaskEvents(c *gin.Context) {
 
 	flusher, _ := c.Writer.(http.Flusher)
 	ctx := c.Request.Context()
+	var writeMu sync.Mutex
+	stopKeepalive := make(chan struct{})
+	go sseKeepalive(c, stopKeepalive, &writeMu)
+	defer close(stopKeepalive)
 
 	for {
 		select {
@@ -1520,12 +1542,15 @@ func (h *AgentHandler) SubscribeAgentTaskEvents(c *gin.Context) {
 			if !ok {
 				return
 			}
+			writeMu.Lock()
 			if _, err := c.Writer.Write(chunk); err != nil {
+				writeMu.Unlock()
 				return
 			}
 			if flusher != nil {
 				flusher.Flush()
 			}
+			writeMu.Unlock()
 		}
 	}
 }

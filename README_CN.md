@@ -34,7 +34,18 @@ CyberStrikeAI 是一款 **AI 原生安全测试平台**，基于 Go 构建，集
 
 ### 系统仪表盘概览
 
-<img src="./images/dashboard.png" alt="系统仪表盘" width="100%">
+<table>
+<tr>
+<td width="50%" align="center">
+<strong>浅色模式</strong><br/>
+<img src="./images/dashboard.png" alt="系统仪表盘（浅色）" width="100%">
+</td>
+<td width="50%" align="center">
+<strong>深色模式</strong><br/>
+<img src="./images/dark.png" alt="系统仪表盘（深色）" width="100%">
+</td>
+</tr>
+</table>
 
 *仪表盘提供系统运行状态、安全漏洞、工具使用情况和知识库的全面概览，帮助用户快速了解平台核心功能和当前状态。*
 
@@ -115,10 +126,11 @@ CyberStrikeAI 是一款 **AI 原生安全测试平台**，基于 Go 构建，集
 - 🛡️ 漏洞管理功能：完整的漏洞 CRUD 操作，支持严重程度分级、状态流转、按对话/严重程度/状态过滤，以及统计看板
 - 📋 批量任务管理：创建任务队列，批量添加任务，依次顺序执行，支持任务编辑与状态跟踪
 - 🎭 角色化测试：预设安全测试角色（渗透测试、CTF、Web 应用扫描等），支持自定义提示词和工具限制
+- 🔀 **图编排**：可视化流程编排（开始 / Agent / 工具 / 条件 / 审批 / 输出），节点间用 `{{previous.output}}` 或 `{{outputs.变量名}}` 传参；绑定角色后对话自动按图执行。详见 [图编排使用说明](docs/workflow-graph.md)
 - 🧩 **Agent 编排（CloudWeGo Eino）**：**单代理** `POST /api/eino-agent/stream`（Eino ADK）；**多代理** `POST /api/multi-agent/stream`，`orchestration` 选 **`deep`** / **`plan_execute`** / **`supervisor`**。ADK **Summarization** 在上下文过长时压缩历史；压缩前将可恢复 **转录** 写入 `data/conversation_artifacts/<会话ID>/summarization/transcript.txt`（保留完整 user/assistant/tool 轮次，省略静态 system）。`agents/` 下主代理与子代理 Markdown 见 [多代理说明](docs/MULTI_AGENT_EINO.md)
 - 🖼️ **视觉分析（`analyze_image`）**：独立 Vision 模型（如 `qwen-vl-max`），MCP 工具分析本地截图/验证码/UI；图片仅在单次 VL 调用中出现，对话上下文只保留文字摘要。配置见 `config.yaml` → `vision` 与 [视觉分析说明](docs/VISION.md)
 - 🎯 **Skills（面向 Eino 重构）**：技能包放在 **`skills_dir`**，遵循 **Agent Skills** 目录规范（`SKILL.md` + 可选文件）；**多代理** 下通过 Eino 官方 **`skill`** 工具 **渐进式披露**（按 name 加载）。**`multi_agent.eino_skills`** 控制是否启用、本机文件/Shell 工具、工具名覆盖；**`eino_middleware`** 可选 patch、tool_search、**plantask**（`TaskCreate` / `TaskList` 任务板，落在 `skills_dir/.eino/plantask/`）、reduction、文件型 **checkpoint**（`checkpoint_dir`）、ChatModel **重试**、会话 **输出键** 及 Deep 调参。20+ 领域示例仍可绑定角色
-- 📱 **机器人**：支持钉钉、飞书长连接，在手机端与 CyberStrikeAI 对话（配置与命令详见 [机器人使用说明](docs/robot.md)）
+- 📱 **机器人**：个人微信、企业微信、钉钉、飞书、Telegram、Slack、Discord、QQ 机器人，在手机或 IM 中与 CyberStrikeAI 对话（详见 [机器人使用说明](docs/robot.md)）
 - 🧑‍⚖️ **人机协同（HITL）**：对话页侧栏配置协同模式与免审批工具白名单；全局列表在 `config.yaml` 的 `hitl.tool_whitelist`；点「应用」可将新增工具合并写入配置文件且**无需重启**即可生效；导航 **人机协同** 页处理待审批工具调用
 - 🐚 **WebShell 管理**：添加与管理 WebShell 连接（兼容冰蝎/蚁剑等），通过虚拟终端执行命令、内置文件管理进行文件操作，并提供按连接维度保存历史的 AI 助手标签页；支持 PHP/ASP/ASPX/JSP 及自定义类型，可配置请求方法与命令参数。
 - 📡 **内置 C2**：面向 AI 协同的轻量 **C2**——**多种监听器**（TCP 反向、HTTP/HTTPS Beacon、WebSocket）、**加密** Beacon 信道、**会话与任务**队列及持久化、**Payload** 辅助（一键命令 / 构建 / 下载）、**SSE** 实时事件、REST（`/api/c2/*`）及智能体侧 **一组 C2 MCP 工具**（如 `c2_listener`、`c2_session`、**`c2_task`**、`c2_task_manage`、`c2_payload`、`c2_event`、`c2_profile`、`c2_file`）；敏感操作可对接 **人机协同（HITL）**，并支持 OPSEC 类规则（如命令拒绝正则）。**仅限授权测试。**
@@ -242,6 +254,7 @@ go build -o cyberstrike-ai cmd/server/main.go
 - **对话测试**：自然语言触发多步工具编排，SSE 实时输出。
 - **单代理 / 多代理**：聊天可选 **Eino 单代理**（`/api/eino-agent/stream`）与 **多代理**（`/api/multi-agent/stream` + `orchestration`）。多代理需 `multi_agent.enabled: true`。MCP 工具桥接一致。
 - **角色化测试**：从预设的安全测试角色（渗透测试、CTF、Web 应用扫描、API 安全测试等）中选择，自定义 AI 行为和可用工具。每个角色可应用自定义系统提示词，并可限制可用工具列表，实现聚焦的测试场景。
+- **图编排**：在 **图编排** 页拖拽节点、连线并保存流程；在角色中绑定 `workflow_id` 后，该角色对话将按图执行（Agent、MCP 工具、条件分支等）。跨节点传参优先用 `{{outputs.变量名}}`。详见 [图编排使用说明](docs/workflow-graph.md)。
 - **工具监控**：查看任务队列、执行日志、大文件附件。
 - **会话历史**：所有对话与工具调用保存在 SQLite，可随时重放。
 - **对话分组**：将对话按项目或主题组织到不同分组，支持置顶、重命名、删除等操作，所有数据持久化存储。
@@ -459,11 +472,6 @@ CyberStrikeAI 支持通过三种传输模式连接外部 MCP 服务器：
 - **Web 管理**：通过 Web 界面创建、更新、删除知识项，支持分类管理；设置页可配置 MultiQuery / 精排 / 预取候选数。
 - **检索日志**：记录所有知识检索操作，便于审计与调试。
 
-**快速开始（使用预构建知识库）：**
-1. **下载知识数据库**：从 [GitHub Releases](https://github.com/Ed1s0nZ/CyberStrikeAI/releases) 下载预构建的知识数据库文件。
-2. **解压并放置**：将下载的知识数据库文件（`knowledge.db`）解压后放到项目的 `data/` 目录下。
-3. **重启服务**：重启 CyberStrikeAI 服务，知识库即可直接使用，无需重新构建索引。
-
 **知识库配置步骤：**
 1. **启用功能**：在 `config.yaml` 中设置 `knowledge.enabled: true`：
    ```yaml
@@ -622,7 +630,8 @@ enabled: true
 ## 相关文档
 
 - [多代理模式（Eino）](docs/MULTI_AGENT_EINO.md)：**Deep**、**Plan-Execute**、**Supervisor**、`agents/*.md`、`eino_skills` / `eino_middleware`、接口与流式说明。
-- [机器人使用说明（钉钉 / 飞书）](docs/robot.md)：在手机端通过钉钉、飞书与 CyberStrikeAI 对话的完整配置步骤、命令与排查说明，**建议按该文档操作以避免走弯路**。
+- [图编排使用说明](docs/workflow-graph.md)：可视化流程搭建、节点配置、`previous` / `outputs` 变量传参与角色绑定。
+- [机器人使用说明](docs/robot.md)：个人微信、企业微信、钉钉、飞书、Telegram、Slack、Discord、QQ 机器人的配置、命令与排查。
 
 ## 项目结构
 
@@ -673,8 +682,6 @@ CyberStrikeAI 现已加入 [404星链计划](https://github.com/knownsec/404Star
   </a>
 </div>
 
-## Stargazers over time
-![Stargazers over time](https://starchart.cc/Ed1s0nZ/CyberStrikeAI.svg)
 
 ---
 

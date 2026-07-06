@@ -35,7 +35,18 @@ CyberStrikeAI is an **AI-native security testing platform** built in Go. It inte
 
 ### System Dashboard Overview
 
-<img src="./images/dashboard.png" alt="System Dashboard" width="100%">
+<table>
+<tr>
+<td width="50%" align="center">
+<strong>Light Mode</strong><br/>
+<img src="./images/dashboard.png" alt="System Dashboard (Light)" width="100%">
+</td>
+<td width="50%" align="center">
+<strong>Dark Mode</strong><br/>
+<img src="./images/dark.png" alt="System Dashboard (Dark)" width="100%">
+</td>
+</tr>
+</table>
 
 *The dashboard provides a comprehensive overview of system runtime status, security vulnerabilities, tool usage, and knowledge base, helping users quickly understand the platform's core features and current state.*
 
@@ -116,10 +127,11 @@ CyberStrikeAI is an **AI-native security testing platform** built in Go. It inte
 - 🛡️ Vulnerability management with CRUD operations, severity tracking, status workflow, and statistics
 - 📋 Batch task management: create task queues, add multiple tasks, and execute them sequentially
 - 🎭 Role-based testing: predefined security testing roles (Penetration Testing, CTF, Web App Scanning, etc.) with custom prompts and tool restrictions
+- 🔀 **Graph orchestration**: visual workflow editor (Start / Agent / Tool / Condition / HITL / Output) with `{{previous.output}}` and `{{outputs.variable_name}}` for inter-node data passing; bind a graph to a role for automatic execution on chat. See [Graph orchestration guide](docs/workflow-graph_en.md)
 - 🧩 **Agent orchestration (CloudWeGo Eino)**: **single-agent** via **`/api/eino-agent/stream`** (Eino ADK `ChatModelAgent`); **multi-agent** via **`/api/multi-agent/stream`** with **`deep`** (coordinator + `task` sub-agents), **`plan_execute`**, or **`supervisor`** (`orchestration` in the request body). ADK **summarization** compresses long contexts; pre-compaction **transcripts** land at `data/conversation_artifacts/<conversation-id>/summarization/transcript.txt` (full user/assistant/tool turns; static system omitted). Markdown under `agents/`: `orchestrator.md`, `orchestrator-plan-execute.md`, `orchestrator-supervisor.md`, plus sub-agent `*.md` (see [Multi-agent doc](docs/MULTI_AGENT_EINO.md))
 - 🖼️ **Vision analysis (`analyze_image`)**: separate VL model (e.g. `qwen-vl-max`) via MCP for local screenshots, captchas, and UI; image bytes stay out of agent history (text summaries only). Configure `vision` in `config.yaml`; see [docs/VISION.md](docs/VISION.md)
 - 🎯 **Skills (refactored for Eino)**: packs under `skills_dir` follow **Agent Skills** layout (`SKILL.md` + optional files); **multi-agent** sessions use the official Eino ADK **`skill`** tool for **progressive disclosure** (load by name), with optional **host filesystem / shell** via `multi_agent.eino_skills`; optional **`eino_middleware`** adds patchtoolcalls, tool_search, **plantask** (`TaskCreate` / `TaskList` boards under `skills_dir/.eino/plantask/`), reduction, file **checkpoints** (`checkpoint_dir`), ChatModel **retries**, session **output key**, and Deep tuning—20+ sample domains (SQLi, XSS, API security, …) ship under `skills/`
-- 📱 **Chatbot**: DingTalk and Lark (Feishu) long-lived connections so you can talk to CyberStrikeAI from mobile (see [Robot / Chatbot guide](docs/robot_en.md) for setup and commands)
+- 📱 **Chatbot**: Personal WeChat, WeCom, DingTalk, Lark, Telegram, Slack, Discord, and QQ Bot—chat from mobile or IM apps (see [Robot / Chatbot guide](docs/robot_en.md))
 - 🧑‍⚖️ **Human-in-the-loop (HITL)**: Chat sidebar to set approval mode and tool allowlists (listed tools skip approval); global list in `config.yaml` under `hitl.tool_whitelist`; **Apply** can merge new tools into the file and update the running server without restart; dedicated **HITL** page for pending approvals
 - 🐚 **WebShell management**: Add and manage WebShell connections (e.g. IceSword/AntSword compatible), use a virtual terminal for command execution, a built-in file manager for file operations, and an AI assistant tab that orchestrates tests and keeps per-connection conversation history; supports PHP, ASP, ASPX, JSP and custom shell types with configurable request method and command parameter.
 - 📡 **Built-in C2**: AI-oriented lightweight command-and-control—**listeners** (TCP reverse, HTTP/HTTPS beacon, WebSocket), **encrypted** beacon channel, **session** and **task** queues with persistence, **payload** helpers (one-liner / build / download), **SSE** live events, REST under `/api/c2/*`, plus unified MCP tools (`c2_listener`, `c2_session`, **`c2_task`**, `c2_task_manage`, `c2_payload`, `c2_event`, `c2_profile`, `c2_file`); optional **HITL** approval for sensitive operations and OPSEC-style controls (e.g. command deny rules). **Authorized testing only.**
@@ -244,6 +256,7 @@ Requirements / tips:
 - **Conversation testing** – Natural-language prompts trigger toolchains with streaming SSE output.
 - **Single vs multi-agent** – Chat UI switches between **Eino single-agent** (`/api/eino-agent/stream`) and **multi-agent** (`/api/multi-agent/stream` with `orchestration`: `deep` | `plan_execute` | `supervisor`). Multi mode requires `multi_agent.enabled: true`. MCP tools are bridged the same way for both paths.
 - **Role-based testing** – Select from predefined security testing roles (Penetration Testing, CTF, Web App Scanning, API Security Testing, etc.) to customize AI behavior and tool availability. Each role applies custom system prompts and can restrict available tools for focused testing scenarios.
+- **Graph orchestration** – Design flows on the **Graph Orchestration** page (drag nodes, connect edges, save); bind `workflow_id` on a role to run the graph on chat (Agent, MCP tools, condition branches). Use `{{outputs.variable_name}}` to pass data across non-adjacent nodes. See [Graph orchestration guide](docs/workflow-graph_en.md).
 - **Tool monitor** – Inspect running jobs, execution logs, and large-result attachments.
 - **History & audit** – Every conversation and tool invocation is stored in SQLite with replay.
 - **Conversation groups** – Organize conversations into groups, pin important groups, rename or delete groups via context menu.
@@ -461,11 +474,6 @@ A test SSE MCP server is available at `cmd/test-sse-mcp-server/` for validation 
 - **Web management** – create, update, delete knowledge items through the web UI, with category-based organization; settings page exposes MultiQuery / rerank / prefetch options.
 - **Retrieval logs** – tracks all knowledge retrieval operations for audit and debugging.
 
-**Quick Start (Using Pre-built Knowledge Base):**
-1. **Download the knowledge database** – Download the pre-built knowledge database file from [GitHub Releases](https://github.com/Ed1s0nZ/CyberStrikeAI/releases).
-2. **Extract and place** – Extract the downloaded knowledge database file (`knowledge.db`) and place it in the project's `data/` directory.
-3. **Restart the service** – Restart the CyberStrikeAI service, and the knowledge base will be ready to use immediately without rebuilding the index.
-
 **Setting up the knowledge base:**
 1. **Enable in config** – set `knowledge.enabled: true` in `config.yaml`:
    ```yaml
@@ -624,7 +632,8 @@ enabled: true
 ## Related documentation
 
 - [Multi-agent mode (Eino)](docs/MULTI_AGENT_EINO.md): **Deep**, **Plan-Execute**, **Supervisor**, `agents/*.md`, `eino_skills` / `eino_middleware`, APIs, and chat/stream behavior.
-- [Robot / Chatbot guide (DingTalk & Lark)](docs/robot_en.md): Full setup, commands, and troubleshooting for using CyberStrikeAI from DingTalk or Lark on your phone. **Follow this doc to avoid common pitfalls.**
+- [Graph orchestration guide](docs/workflow-graph_en.md): visual workflow design, node configuration, `previous` / `outputs` variable passing, and role binding.
+- [Robot / Chatbot guide](docs/robot_en.md): Setup, commands, and troubleshooting for WeChat, WeCom, DingTalk, Lark, Telegram, Slack, Discord, and QQ Bot.
 
 ## Project Layout
 
@@ -676,8 +685,6 @@ CyberStrikeAI has joined [404Starlink](https://github.com/knownsec/404StarLink)
   </a>
 </div>
 
-## Stargazers over time
-![Stargazers over time](https://starchart.cc/Ed1s0nZ/CyberStrikeAI.svg)
 
 
 ---

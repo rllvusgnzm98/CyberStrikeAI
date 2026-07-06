@@ -808,6 +808,10 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 			zap.Bool("wecom_enabled", h.config.Robots.Wecom.Enabled),
 			zap.Bool("dingtalk_enabled", h.config.Robots.Dingtalk.Enabled),
 			zap.Bool("lark_enabled", h.config.Robots.Lark.Enabled),
+			zap.Bool("telegram_enabled", h.config.Robots.Telegram.Enabled),
+			zap.Bool("slack_enabled", h.config.Robots.Slack.Enabled),
+			zap.Bool("discord_enabled", h.config.Robots.Discord.Enabled),
+			zap.Bool("qq_enabled", h.config.Robots.QQ.Enabled),
 		)
 	}
 
@@ -1802,8 +1806,21 @@ func updateHitlConfig(doc *yaml.Node, cfg config.HitlConfig) {
 	hitlNode := ensureMap(root, "hitl")
 	// flow 样式 [a, b, c] 单行展示，工具多时比块序列省行数
 	setFlowStringSliceInMap(hitlNode, "tool_whitelist", cfg.ToolWhitelist)
+	setStringInMap(hitlNode, "default_reviewer", cfg.EffectiveDefaultReviewer())
 	setStringInMap(hitlNode, "audit_agent_prompt", cfg.AuditAgentPrompt)
 	setStringInMap(hitlNode, "audit_agent_prompt_review_edit", cfg.AuditAgentPromptReviewEdit)
+}
+
+// UpdateHitlDefaultReviewer 更新全局默认审批方并写入 config.yaml。
+func (h *ConfigHandler) UpdateHitlDefaultReviewer(reviewer string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.config.Hitl.DefaultReviewer = config.HitlConfig{DefaultReviewer: reviewer}.EffectiveDefaultReviewer()
+	if err := h.saveConfig(); err != nil {
+		return err
+	}
+	h.logger.Info("HITL 全局默认审批方已写入配置文件", zap.String("default_reviewer", h.config.Hitl.DefaultReviewer))
+	return nil
 }
 
 // UpdateHitlAuditAgentStrategy 更新审批/审查编辑两套审计 Agent 提示词并写入 config.yaml。
@@ -1857,6 +1874,28 @@ func updateRobotsConfig(doc *yaml.Node, cfg config.RobotsConfig) {
 	setStringInMap(larkNode, "app_secret", cfg.Lark.AppSecret)
 	setStringInMap(larkNode, "verify_token", cfg.Lark.VerifyToken)
 	setBoolInMap(larkNode, "allow_chat_id_fallback", cfg.Lark.AllowChatIDFallback)
+
+	telegramNode := ensureMap(robotsNode, "telegram")
+	setBoolInMap(telegramNode, "enabled", cfg.Telegram.Enabled)
+	setStringInMap(telegramNode, "bot_token", cfg.Telegram.BotToken)
+	setStringInMap(telegramNode, "bot_username", cfg.Telegram.BotUsername)
+	setBoolInMap(telegramNode, "allow_group_messages", cfg.Telegram.AllowGroupMessages)
+
+	slackNode := ensureMap(robotsNode, "slack")
+	setBoolInMap(slackNode, "enabled", cfg.Slack.Enabled)
+	setStringInMap(slackNode, "bot_token", cfg.Slack.BotToken)
+	setStringInMap(slackNode, "app_token", cfg.Slack.AppToken)
+
+	discordNode := ensureMap(robotsNode, "discord")
+	setBoolInMap(discordNode, "enabled", cfg.Discord.Enabled)
+	setStringInMap(discordNode, "bot_token", cfg.Discord.BotToken)
+	setBoolInMap(discordNode, "allow_guild_messages", cfg.Discord.AllowGuildMessages)
+
+	qqNode := ensureMap(robotsNode, "qq")
+	setBoolInMap(qqNode, "enabled", cfg.QQ.Enabled)
+	setStringInMap(qqNode, "app_id", cfg.QQ.AppID)
+	setStringInMap(qqNode, "client_secret", cfg.QQ.ClientSecret)
+	setBoolInMap(qqNode, "sandbox", cfg.QQ.Sandbox)
 }
 
 func updateMultiAgentConfig(doc *yaml.Node, cfg config.MultiAgentConfig) {
