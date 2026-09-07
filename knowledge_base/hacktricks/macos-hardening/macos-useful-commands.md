@@ -33,7 +33,7 @@ nettop #Monitor network usage of processes in top style
 system_profiler SPSoftwareDataType #System info
 system_profiler SPPrintersDataType #Printer
 system_profiler SPApplicationsDataType #Installed Apps
-system_profiler SPFrameworksDataType #Instaled framework
+system_profiler SPFrameworksDataType #Installed framework
 system_profiler SPDeveloperToolsDataType #Developer tools info
 system_profiler SPStartupItemDataType #Startup Items
 system_profiler SPNetworkDataType #Network Capabilities
@@ -119,7 +119,7 @@ sudo killall -HUP mDNSResponder
 
 ### Quick anti-analysis / virtualization check
 
-Some macOS stealers call `system_profiler` to detect VMs and **abort with a distinct exit code (e.g., 100)** to avoid sandbox detonation:
+Some macOS stealers call `system_profiler` to detect VMs and **abort with a distinct exit code (e.g., 100)** to avoid sandbox detonation<sup>[[1]](#references)</sup>:
 
 ```bash
 if system_profiler SPHardwareDataType SPDisplaysDataType | grep -Eiq 'qemu|kvm|vmware|virtualbox'; then
@@ -133,7 +133,7 @@ Check for **suspicious** applications installed and **privileges** over the.inst
 
 ```
 system_profiler SPApplicationsDataType #Installed Apps
-system_profiler SPFrameworksDataType #Instaled framework
+system_profiler SPFrameworksDataType #Installed framework
 lsappinfo list #Installed Apps
 launchctl list #Services
 ```
@@ -159,9 +159,6 @@ Without prompts
 
 ## References
 
-- [2025, the year of the Infostealer](https://www.pentestpartners.com/security-blog/2025-the-year-of-the-infostealer/)
+- [1] [2025, the year of the Infostealer](https://www.pentestpartners.com/security-blog/2025-the-year-of-the-infostealer/)
 
 {{#include ../banners/hacktricks-training.md}}
-
-
-

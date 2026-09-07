@@ -21,7 +21,7 @@ Then **`posix_spawn`** was introduced combining **`vfork`** and **`execve`** in 
 - `POSIX_SPAWN_CLOEXEC_DEFAULT`: Close all file descriptions on exec(2) by default
 - `_POSIX_SPAWN_HIGH_BITS_ASLR:` Randomize high bits of ASLR slide
 
-Moreover, `posix_spawn` allows to specify an array of **`posix_spawnattr`** that controls some aspects of the spawned process, and **`posix_spawn_file_actions`** to modify the state of the descriptors.
+Moreover, `posix_spawn` accepts **`posix_spawnattr`** settings that control aspects of the spawned process and **`posix_spawn_file_actions`** entries that modify file descriptors.
 
 When a process dies it send the **return code to the parent process** (if the parent died, the new parent is PID 1) with the signal `SIGCHLD`. The parent needs to get this value calling `wait4()` or `waitid()` and until that happen the child stays in a zombie state where it's still listed but doesn't consume resources.
 
@@ -143,9 +143,9 @@ Using QoS classes, developers do not need to manage the exact priority numbers b
 
 Moreover, there are different **thread scheduling policies** that flows to specify a set of scheduling parameters that the scheduler will take into consideration. This can be done using `thread_policy_[set/get]`. This might be useful in race condition attacks.
 
-## MacOS Process Abuse
+## macOS Process Abuse
 
-MacOS, like any other operating system, provides a variety of methods and mechanisms for **processes to interact, communicate, and share data**. While these techniques are essential for efficient system functioning, they can also be abused by threat actors to **perform malicious activities**.
+macOS provides many mechanisms for **processes to interact, communicate, and share data**. Although these mechanisms are essential to normal system operation, attackers can abuse them for injection, code execution, or data access.
 
 ### Library Injection
 
@@ -203,7 +203,7 @@ macos-dirty-nib.md
 
 ### Java Applications Injection
 
-It's possible to abuse certain java capabilities (like the **`_JAVA_OPTS`** env variable) to make a java application execute **arbitrary code/commands**.
+It's possible to inject JVM options through **`_JAVA_OPTIONS`**, **`JAVA_TOOL_OPTIONS`**, or **`JDK_JAVA_OPTIONS`** and load a Java or native agent before the application starts.
 
 
 {{#ref}}
@@ -212,11 +212,75 @@ macos-java-apps-injection.md
 
 ### .Net Applications Injection
 
-It's possible to inject code into .Net applications by **abusing the .Net debugging functionality** (not protected by macOS protections such as runtime hardening).
+It's possible to inject code into .NET applications through **`DOTNET_STARTUP_HOOKS`** before `Main`, or by abusing the .NET debugging functionality when its prerequisites are present.
 
 
 {{#ref}}
 macos-.net-applications-injection.md
+{{#endref}}
+
+### Shell Injection
+
+Non-interactive Bash reads **`BASH_ENV`**; zsh reads **`$ZDOTDIR/.zshenv`**; and fish reads configuration below **`XDG_CONFIG_HOME`** or **`XDG_DATA_DIRS`**. Each can execute a controlled startup file before the intended command:
+
+{{#ref}}
+macos-bash-applications-injection.md
+{{#endref}}
+
+### PHP Injection
+
+**`PHPRC`** or **`PHP_INI_SCAN_DIR`** can load controlled PHP configuration whose **`auto_prepend_file`** executes before the target script.
+
+{{#ref}}
+macos-php-applications-injection.md
+{{#endref}}
+
+### Lua Injection
+
+The standalone Lua interpreter executes code or an `@file` from **`LUA_INIT`** (or its version-specific variant) before processing the target script.
+
+{{#ref}}
+macos-lua-applications-injection.md
+{{#endref}}
+
+### R Injection
+
+**`R_PROFILE_USER`** and **`R_PROFILE`** redirect startup profiles containing R code. **`R_DEFAULT_PACKAGES`** / **`R_SCRIPT_DEFAULT_PACKAGES`** plus an R library path can instead auto-load an installed package.
+
+{{#ref}}
+macos-r-applications-injection.md
+{{#endref}}
+
+### Julia Injection
+
+**`JULIA_DEPOT_PATH`** redirects the depot whose `config/startup.jl` is automatically executed.
+
+{{#ref}}
+macos-julia-applications-injection.md
+{{#endref}}
+
+### Erlang and Elixir Injection
+
+**`ERL_AFLAGS`**, **`ERL_FLAGS`**, or **`ERL_ZFLAGS`** can inject an Erlang VM **`-eval`** expression without requiring a payload file; Elixir workloads commonly start the same VM.
+
+{{#ref}}
+macos-erlang-elixir-applications-injection.md
+{{#endref}}
+
+### GNU Octave Injection
+
+**`OCTAVE_SITE_INITFILE`** and **`OCTAVE_VERSION_INITFILE`** redirect Octave startup scripts.
+
+{{#ref}}
+macos-octave-applications-injection.md
+{{#endref}}
+
+### PowerShell Injection
+
+On macOS and Linux, **`XDG_CONFIG_HOME`** can redirect PowerShell user profiles that execute when `pwsh` starts.
+
+{{#ref}}
+macos-powershell-applications-injection.md
 {{#endref}}
 
 ### Perl Injection
@@ -239,51 +303,39 @@ macos-ruby-applications-injection.md
 
 ### Python Injection
 
-If the environment variable **`PYTHONINSPECT`** is set, the python process will drop into a python cli once it's finished. It's also possible to use **`PYTHONSTARTUP`** to indicate a python script to execute at the beginning of an interactive session.\
-However, note that **`PYTHONSTARTUP`** script won't be executed when **`PYTHONINSPECT`** creates the interactive session.
-
-Other env variables such as **`PYTHONPATH`** and **`PYTHONHOME`** could also be useful to make a python command execute arbitrary code.
+The **`PYTHONWARNINGS`** and **`BROWSER`** standard-library chain can execute a command during warning-filter parsing. A file-backed alternative places `sitecustomize.py` on **`PYTHONPATH`** so normal `site` initialization imports it before the target script. Interactive-only variables such as **`PYTHONSTARTUP`** have narrower applicability.
 
 Note that executables compiled with **`pyinstaller`** won't use these environmental variables even if they are running using an embedded python.
 
-> [!CAUTION]
-> Overall I couldn't find a way to make python execute arbitrary code abusing environment variables.\
-> However, most of the people install pyhton using **Hombrew**, which will install pyhton in a **writable location** for the default admin user. You can hijack it with something like:
->
-> ```bash
-> mv /opt/homebrew/bin/python3 /opt/homebrew/bin/python3.old
-> cat > /opt/homebrew/bin/python3 <<EOF
-> #!/bin/bash
-> # Extra hijack code
-> /opt/homebrew/bin/python3.old "$@"
-> EOF
-> chmod +x /opt/homebrew/bin/python3
-> ```
->
-> Even **root** will run this code when running python.
+{{#ref}}
+macos-python-applications-injection.md
+{{#endref}}
+
+Separately, Homebrew commonly installs Python below `/opt/homebrew`, where members of the local `admin` group may be able to replace the launcher. That is a writable-binary hijack rather than environment-variable injection; verify ownership and ACLs before treating it as exploitable.
 
 
 ## Detection
 
 ### Shield
 
-[**Shield**](https://theevilbit.github.io/shield/) ([**Github**](https://github.com/theevilbit/Shield)) is an open source application that can **detect and block process injection** actions:
+[**Shield**](https://github.com/theevilbit/Shield) is an open-source **EndpointSecurity**-based application that detects and blocks process injection. It is a good reference for which signals are observable through Endpoint Security, since it alerts on:<sup>[[1]](#references)</sup><sup>[[2]](#references)</sup>
 
-- Using **Environmental Variables**: It will monitor the presence of any of the following environmental variables: **`DYLD_INSERT_LIBRARIES`**, **`CFNETWORK_LIBRARY_PATH`**, **`RAWCAMERA_BUNDLE_PATH`** and **`ELECTRON_RUN_AS_NODE`**
-- Using **`task_for_pid`** calls: To find when one process wants to get the **task port of another** which allows to inject code in the process.
-- **Electron apps params**: Someone can use **`--inspect`**, **`--inspect-brk`** and **`--remote-debugging-port`** command line argument to start an Electron app in debugging mode, and thus inject code to it.
-- Using **symlinks** or **hardlinks**: Typically the most common abuse is to **place a link with our user privileges**, and **point it to a higher privilege** location. The detection is very simple for both hardlink and symlinks. If the process creating the link has a **different privilege level** than the target file, we create an **alert**. Unfortunately in the case of symlinks blocking is not possible, as we don’t have information about the destination of the link prior creation. This is a limitation of Apple’s EndpointSecuriy framework.
+- **Injection environment variables** on process exec: `DYLD_INSERT_LIBRARIES`, `CFNETWORK_LIBRARY_PATH`, `RAWCAMERA_BUNDLE_PATH` and `ELECTRON_RUN_AS_NODE`.
+- **`task_for_pid`** calls — one process asking for another's task port, which is the prerequisite for injecting into it.
+- **Electron debugging arguments** — `--inspect`, `--inspect-brk` and `--remote-debugging-port`, which start an Electron app in debug mode and let anyone attach and run code in it.<sup>[[3]](#references)</sup>
+- **Symlink/hardlink creation across privilege levels** — the classic "plant a link as a normal user, point it at a privileged location" primitive. Note that **symlinks can be alerted on but not blocked**: EndpointSecurity does not expose the link destination before creation.
 
 ### Calls made by other processes
 
-In [**this blog post**](https://knight.sc/reverse%20engineering/2019/04/15/detecting-task-modifications.html) you can find how it's possible to use the function **`task_name_for_pid`** to get information about other **processes injecting code in a process** and then getting information about that other process.
+In [**this blog post**](https://knight.sc/reverse%20engineering/2019/04/15/detecting-task-modifications.html) you can find how it's possible to use the function **`task_name_for_pid`** to get information about other **processes injecting code in a process** and then getting information about that other process.<sup>[[4]](#references)</sup>
 
 Note that to call that function you need to be **the same uid** as the one running the process or **root** (and it returns info about the process, not a way to inject code).
 
 ## References
 
-- [https://theevilbit.github.io/shield/](https://theevilbit.github.io/shield/)
-- [https://medium.com/@metnew/why-electron-apps-cant-store-your-secrets-confidentially-inspect-option-a49950d6d51f](https://medium.com/@metnew/why-electron-apps-cant-store-your-secrets-confidentially-inspect-option-a49950d6d51f)
+- [1] [Shield — open source macOS process-injection detection (GitHub)](https://github.com/theevilbit/Shield)
+- [2] [Apple Developer — EndpointSecurity framework](https://developer.apple.com/documentation/endpointsecurity)
+- [3] [Metnew - Why Electron apps can't store your secrets confidentially: --inspect option](https://medium.com/@metnew/why-electron-apps-cant-store-your-secrets-confidentially-inspect-option-a49950d6d51f)
+- [4] [Scott Knight - Detecting task modifications](https://knight.sc/reverse%20engineering/2019/04/15/detecting-task-modifications.html)
 
 {{#include ../../../banners/hacktricks-training.md}}
-
