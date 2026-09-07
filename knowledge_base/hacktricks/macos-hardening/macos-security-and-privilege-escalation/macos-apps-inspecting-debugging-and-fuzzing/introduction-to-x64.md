@@ -4,7 +4,7 @@
 
 ## **Introduction to x64**
 
-x64, also known as x86-64, is a 64-bit processor architecture predominantly used in desktop and server computing. Originating from the x86 architecture produced by Intel and later adopted by AMD with the name AMD64, it's the prevalent architecture in personal computers and servers today.
+x64, also known as x86-64 or AMD64, is the 64-bit extension of the x86 instruction-set architecture. It remains prevalent in desktop and server computing and is the architecture used by Intel-based Macs; Apple-silicon Macs use arm64 instead. Intel's architecture manuals define the registers, instruction set, and operating modes summarized below. <sup>[[1]](#references)</sup>
 
 ### **Registers**
 
@@ -178,7 +178,9 @@ int main(int argc, char **argv) {
 
 #### Shell
 
-Taken from [**here**](https://github.com/daem0nc0re/macOS_ARM64_Shellcode/blob/master/shell.s) and explained.
+The following minimal examples invoke `execve` using the macOS x86-64 syscall convention:
+
+For the corresponding ARM64 implementation and its original shellcode source, see the [ARM64 basic assembly page](arm64-basic-assembly.md#shell).
 
 {{#tabs}}
 {{#tab name="with adr"}}
@@ -298,7 +300,7 @@ touch_command:  db "touch /tmp/lalala", 0
 
 #### Bind shell
 
-Bind shell from [https://packetstormsecurity.com/files/151731/macOS-TCP-4444-Bind-Shell-Null-Free-Shellcode.html](https://packetstormsecurity.com/files/151731/macOS-TCP-4444-Bind-Shell-Null-Free-Shellcode.html) in **port 4444**
+Bind shell from [https://packetstormsecurity.com/files/151731/macOS-TCP-4444-Bind-Shell-Null-Free-Shellcode.html](https://packetstormsecurity.com/files/151731/macOS-TCP-4444-Bind-Shell-Null-Free-Shellcode.html) in **port 4444**<sup>[[2]](#references)</sup>
 
 ```armasm
 section .text
@@ -377,7 +379,7 @@ dup2:
 
 #### Reverse Shell
 
-Reverse shell from [https://packetstormsecurity.com/files/151727/macOS-127.0.0.1-4444-Reverse-Shell-Shellcode.html](https://packetstormsecurity.com/files/151727/macOS-127.0.0.1-4444-Reverse-Shell-Shellcode.html). Reverse shell to **127.0.0.1:4444**
+Reverse shell from [https://packetstormsecurity.com/files/151727/macOS-127.0.0.1-4444-Reverse-Shell-Shellcode.html](https://packetstormsecurity.com/files/151727/macOS-127.0.0.1-4444-Reverse-Shell-Shellcode.html). Reverse shell to **127.0.0.1:4444**<sup>[[3]](#references)</sup>
 
 ```armasm
 section .text
@@ -441,7 +443,10 @@ dup2:
     syscall
 ```
 
+## References
+
+- [1] [Intel - Intel 64 and IA-32 Architectures Software Developer Manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)
+- [2] [Packet Storm - macOS TCP 4444 Bind Shell (Null-Free) Shellcode](https://packetstormsecurity.com/files/151731/macOS-TCP-4444-Bind-Shell-Null-Free-Shellcode.html)
+- [3] [Packet Storm - macOS 127.0.0.1:4444 Reverse Shell Shellcode](https://packetstormsecurity.com/files/151727/macOS-127.0.0.1-4444-Reverse-Shell-Shellcode.html)
+
 {{#include ../../../banners/hacktricks-training.md}}
-
-
-
