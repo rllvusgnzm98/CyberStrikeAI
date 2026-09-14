@@ -2,7 +2,7 @@
 
 {{#include ../../banners/hacktricks-training.md}}
 
-The **custom firmware and/or compiled binaries can be uploaded to exploit integrity or signature verification flaws**. The following steps can be followed for backdoor bind shell compilation:
+When an authorized assessment finds weak or missing firmware-signature verification, a modified firmware image can demonstrate the integrity impact. The following lab workflow adds a bind shell while retaining the original extraction, emulation, and repacking steps.<sup>[[2]](#references)[[3]](#references)</sup>
 
 1. The firmware can be extracted using firmware-mod-kit (FMK).
 2. The target firmware architecture and endianness should be identified.
@@ -16,7 +16,7 @@ The **custom firmware and/or compiled binaries can be uploaded to exploit integr
 10. The modified firmware can be repackaged using FMK.
 11. The backdoored firmware can be tested by emulating it with firmware analysis toolkit (FAT) and connecting to the target backdoor IP and port using netcat.
 
-If a root shell has already been obtained through dynamic analysis, bootloader manipulation, or hardware security testing, precompiled malicious binaries such as implants or reverse shells can be executed. Automated payload/implant tools like the Metasploit framework and 'msfvenom' can be leveraged using the following steps:
+If a root shell has already been obtained through dynamic analysis, bootloader manipulation, or hardware security testing, precompiled test binaries such as implants or reverse shells can be executed. Metasploit's `msfvenom` can generate an architecture-specific payload for this validation workflow:<sup>[[4]](#references)</sup>
 
 1. The target firmware architecture and endianness should be identified.
 2. Msfvenom can be used to specify the target payload, attacker host IP, listening port number, filetype, architecture, platform, and the output file.
@@ -26,7 +26,7 @@ If a root shell has already been obtained through dynamic analysis, bootloader m
 
 ## Unauthenticated transport bridges to privileged update protocols
 
-A common embedded design mistake is exposing the **same internal command protocol over several transports** but enforcing authentication on only one of them. For example, USB may require challenge-response while BLE simply forwards unauthenticated **GATT writes** into the same privileged firmware-update handler.
+A common embedded design mistake is exposing the **same internal command protocol over several transports** but enforcing authentication on only one of them. For example, USB may require challenge-response while BLE simply forwards unauthenticated **GATT writes** into the same privileged firmware-update handler.<sup>[[1]](#references)</sup>
 
 Typical offensive workflow:
 
@@ -57,7 +57,7 @@ Things to verify while reversing:
 
 ## Checksum-only firmware containers are still attacker-controlled firmware
 
-A firmware container protected only by an **unkeyed checksum** (CRC32, SHA-256, MD5, etc.) provides corruption detection, **not authenticity**. If the attacker can reach the update routine, they can patch the image, recompute the checksum, and flash arbitrary code.
+A firmware container protected only by an **unkeyed checksum** (CRC32, SHA-256, MD5, etc.) provides corruption detection, **not authenticity**. If the attacker can reach the update routine, they can patch the image, recompute the checksum, and flash arbitrary code.<sup>[[1]](#references)</sup>
 
 Red flags during RE:
 
@@ -78,7 +78,7 @@ If this works over a remotely reachable transport such as BLE/Wi-Fi, the bug is 
 
 ## Turning a trusted USB peripheral into BadUSB via firmware reflashing
 
-When the target device is already trusted by the host over USB, malicious firmware may not need to implement a full new USB stack. A much easier pivot is often to **reuse existing HID support**.
+When the target device is already trusted by the host over USB, malicious firmware may not need to implement a full new USB stack. A much easier pivot is often to **reuse existing HID support**.<sup>[[1]](#references)</sup>
 
 Useful pattern:
 
@@ -99,7 +99,7 @@ This turns firmware compromise into **host compromise** because the PC will trus
 
 ## Reliable payload execution inside RTOS firmware
 
-Instead of inserting fragile trampolines into random code paths, look for **existing RTOS tasks** that are unused or low-impact in normal operation.
+Instead of inserting fragile trampolines into random code paths, look for **existing RTOS tasks** that are unused or low-impact in normal operation.<sup>[[1]](#references)</sup>
 
 Why this is useful:
 
@@ -111,7 +111,7 @@ Good targets are diagnostic, factory-test, telemetry, or coprocessor service tas
 
 ## Fast exploit iteration: repurpose benign protocol handlers
 
-Once firmware patching is possible, a compact way to accelerate RE is to overwrite a harmless command handler (for example an **echo/debug opcode**) with custom **memory read / write / execute** primitives. This avoids full reflashing for every experiment and is especially useful when the device supports the modified handler over a fast wired transport.
+Once firmware patching is possible, a compact way to accelerate RE is to overwrite a harmless command handler (for example an **echo/debug opcode**) with custom **memory read / write / execute** primitives. This avoids full reflashing for every experiment and is especially useful when the device supports the modified handler over a fast wired transport.<sup>[[1]](#references)</sup>
 
 Use this to:
 
@@ -122,6 +122,9 @@ Use this to:
 
 ## References
 
-- [Pwnd Blaster: Hacking your PC using your speaker without ever touching it](https://blog.nns.ee/2026/06/03/katana-badusb/)
+- [1] [Pwnd Blaster: Hacking your PC using your speaker without ever touching it](https://blog.nns.ee/2026/06/03/katana-badusb/)
+- [2] [firmware-mod-kit](https://github.com/rampageX/firmware-mod-kit)
+- [3] [Firmware Analysis Toolkit](https://github.com/attify/firmware-analysis-toolkit)
+- [4] [Metasploit - How to use `msfvenom`](https://docs.metasploit.com/docs/using-metasploit/basics/how-to-use-msfvenom.html)
 
 {{#include ../../banners/hacktricks-training.md}}

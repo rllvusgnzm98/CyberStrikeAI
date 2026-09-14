@@ -24,7 +24,7 @@ local function dump_globals(out)
 end
 ```
 
-- If no print() is available, repurpose in-VM channels. Example from an MMO housing script VM where chat output only works after a sound call; the following builds a reliable output function:
+- If no print() is available, repurpose in-VM channels. Example from an MMO housing script VM where chat output only works after a sound call; the following builds a reliable output function:<sup>[[1]](#references)</sup>
 
 ```lua
 -- Build an output channel using in-game primitives
@@ -59,12 +59,13 @@ io.popen("/bin/sh -c 'id'")
 ```
 
 Notes:
+
 - Execution happens inside the client process; many anti-cheat/antidebug layers that block external debuggers won’t prevent in-VM process creation.
 - Also check: package.loadlib (arbitrary DLL/.so loading), require with native modules, LuaJIT's ffi (if present), and the debug library (can raise privileges inside the VM).
 
 ## Zero-click triggers via auto-run callbacks
 
-If the host application pushes scripts to clients and the VM exposes auto-run hooks (e.g., OnInit/OnLoad/OnEnter), place your payload there for drive-by compromise as soon as the script loads:
+If the host application pushes scripts to clients and the VM exposes auto-run hooks (e.g., OnInit/OnLoad/OnEnter), place your payload there for drive-by compromise as soon as the script loads:<sup>[[1]](#references)</sup>
 
 ```lua
 function OnInit()
@@ -85,12 +86,14 @@ During _G enumeration, specifically look for:
 
 Minimal usage examples (if reachable):
 
+Lua's loader API changed across versions: in Lua 5.1, `load` reads from a reader function and `loadstring` reads from a string; Lua 5.2's `load` accepts either a string or a reader function, and `loadstring` is deprecated as its equivalent.<sup>[[5]](#references)[[6]](#references)</sup>
+
 ```lua
--- Execute source/bytecode
+-- Lua 5.2+ source loader; Lua 5.1 use loadstring("return 1+1")
 local f = load("return 1+1")
 print(f()) -- 2
 
--- loadstring is alias of load for strings in 5.1
+-- Lua 5.1 string/bytecode loader
 local bc = string.dump(function() return 0x1337 end)
 local g = loadstring(bc) -- in 5.1 may run precompiled bytecode
 print(g())
@@ -103,9 +106,9 @@ local foo = mylib()
 ## Optional escalation: abusing Lua bytecode loaders
 
 When load/loadstring/loadfile are reachable but io/os are restricted, execution of crafted Lua bytecode can lead to memory disclosure and corruption primitives. Key facts:
-- Lua ≤ 5.1 shipped a bytecode verifier that has known bypasses.
-- Lua 5.2 removed the verifier entirely (official stance: applications should just reject precompiled chunks), widening the attack surface if bytecode loading is not prohibited.
-- Workflows typically: leak pointers via in-VM output, craft bytecode to create type confusions (e.g., around FORLOOP or other opcodes), then pivot to arbitrary read/write or native code execution.
+- Lua ≤ 5.1 shipped a bytecode verifier that has known bypasses.<sup>[[4]](#references)</sup>
+- Lua 5.2 removed the verifier entirely (official stance: applications should just reject precompiled chunks), widening the attack surface if bytecode loading is not prohibited.<sup>[[2]](#references)[[3]](#references)</sup>
+- Workflows typically: leak pointers via in-VM output, craft bytecode to create type confusions (e.g., around FORLOOP or other opcodes), then pivot to arbitrary read/write or native code execution.<sup>[[2]](#references)[[4]](#references)</sup>
 
 This path is engine/version-specific and requires RE. See references for deep dives, exploitation primitives, and example gadgetry in games.
 
@@ -117,9 +120,11 @@ This path is engine/version-specific and requires RE. See references for deep di
 
 ## References
 
-- [This House is Haunted: a decade old RCE in the AION client (housing Lua VM)](https://appsec.space/posts/aion-housing-exploit/)
-- [Bytecode Breakdown: Unraveling Factorio's Lua Security Flaws](https://memorycorruption.net/posts/rce-lua-factorio/)
-- [lua-l (2009): Discussion on dropping the bytecode verifier](https://web.archive.org/web/20230308193701/https://lua-users.org/lists/lua-l/2009-03/msg00039.html)
-- [Exploiting Lua 5.1 bytecode (gist with verifier bypasses/notes)](https://gist.github.com/ulidtko/51b8671260db79da64d193e41d7e7d16)
+- [1] [This House is Haunted: a decade old RCE in the AION client (housing Lua VM)](https://appsec.space/posts/aion-housing-exploit/)
+- [2] [Bytecode Breakdown: Unraveling Factorio's Lua Security Flaws](https://memorycorruption.net/posts/rce-lua-factorio/)
+- [3] [lua-l (2009): Discussion on dropping the bytecode verifier](https://web.archive.org/web/20230308193701/https://lua-users.org/lists/lua-l/2009-03/msg00039.html)
+- [4] [Exploiting Lua 5.1 bytecode (gist with verifier bypasses/notes)](https://gist.github.com/ulidtko/51b8671260db79da64d193e41d7e7d16)
+- [5] [Lua 5.1 Reference Manual](https://www.lua.org/manual/5.1/manual.html#pdf-loadstring)
+- [6] [Lua 5.2 Reference Manual](https://www.lua.org/manual/5.2/manual.html#pdf-load)
 
 {{#include ../../../banners/hacktricks-training.md}}
