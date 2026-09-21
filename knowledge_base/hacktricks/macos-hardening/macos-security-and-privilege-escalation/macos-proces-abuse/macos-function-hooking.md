@@ -109,7 +109,7 @@ extern void dyld_dynamic_interpose(const struct mach_header* mh,
 
 If you already have code execution **inside the process** and want to hook an **imported C function** without relaunching the target, a very common primitive is **symbol rebinding** (popularised by **`fishhook`**).
 
-Instead of using the **`__interpose`** section, this technique walks the Mach-O metadata (`__LINKEDIT` -> indirect symbol table -> `__la_symbol_ptr` / `__nl_symbol_ptr`) and **overwrites the import slot** used by the current image. This is very useful to hook functions in an **already-running** process or to hook **just one image** with **`rebind_symbols_image`**.
+Instead of using the **`__interpose`** section, this technique walks the Mach-O metadata (`__LINKEDIT` -> indirect symbol table -> `__la_symbol_ptr` / `__nl_symbol_ptr`) and **overwrites the import slot** used by the current image. This is very useful to hook functions in an **already-running** process or to hook **just one image** with **`rebind_symbols_image`**.<sup>[[2]](#references)</sup>
 
 > [!TIP]
 > This only affects calls that actually go through an **import pointer**. If the target function is **called directly inside the same image**, there is no imported slot to rewrite, so this technique won't see that call site.
@@ -138,7 +138,7 @@ static void install(void) {
 DYLD_INSERT_LIBRARIES=./fishhook_demo.dylib ./hello
 ```
 
-On recent macOS versions many rebinding targets are no longer in writable **`__DATA`** pages. Rebinders usually need to temporarily make **`__DATA_CONST`** writable before patching the pointer. Moreover, on Apple Silicon / **`arm64e`** you should expect authenticated pointers and extra indirection in **`__AUTH_CONST.__auth_got`**, so a rebinder that only scans the classic lazy/non-lazy symbol pointer sections may miss some call sites.
+On recent macOS versions many rebinding targets are no longer in writable **`__DATA`** pages. Rebinders usually need to temporarily make **`__DATA_CONST`** writable before patching the pointer. Moreover, on Apple Silicon / **`arm64e`** you should expect authenticated pointers and extra indirection in **`__AUTH_CONST.__auth_got`**, so a rebinder that only scans the classic lazy/non-lazy symbol pointer sections may miss some call sites.<sup>[[3]](#references)</sup>
 
 > [!CAUTION]
 > The **`arm64e`** ABI uses **Pointer Authentication (PAC)** for many function pointers. Blind pointer writes that used to work on Intel can break a call site on Apple Silicon. When writing your own rebinder or inline hooker, be ready to use **`<ptrauth.h>`** helpers such as **`ptrauth_sign_unauthenticated`** or **`ptrauth_auth_and_resign`** and test specifically on **`arm64e`** targets.
@@ -153,7 +153,7 @@ It's needed the **object**, the **method** and the **params**. And when a method
 
 The object is **`someObject`**, the method is **`@selector(method1p1:p2:)`** and the arguments are **value1**, **value2**.
 
-Following the object structures, it's possible to reach an **array of methods** where the **names** and **pointers** to the method code are **located**.
+Following the object structures, it's possible to reach an **array of methods** where the **names** and **pointers** to the method code are **located**.<sup>[[1]](#references)</sup>
 
 > [!CAUTION]
 > Note that because methods and classes are accessed based on their names, this information is stored in the binary, so it's possible to retrieve it with `otool -ov </path/bin>` or [`class-dump </path/bin>`](https://github.com/nygard/class-dump)
@@ -413,9 +413,9 @@ static void customConstructor(int argc, const char **argv) {
 
 ## References
 
-- [https://nshipster.com/method-swizzling/](https://nshipster.com/method-swizzling/)
-- [https://github.com/facebook/fishhook](https://github.com/facebook/fishhook)
-- [https://clang.llvm.org/docs/PointerAuthentication.html](https://clang.llvm.org/docs/PointerAuthentication.html)
+- [1] [Method Swizzling - NSHipster](https://nshipster.com/method-swizzling/)
+- [2] [facebook/fishhook: A library that simplifies the process of dynamically rebinding symbols in Mach-O binaries](https://github.com/facebook/fishhook)
+- [3] [Pointer Authentication — Clang Documentation](https://clang.llvm.org/docs/PointerAuthentication.html)
 
 {{#include ../../../banners/hacktricks-training.md}}
 
