@@ -6,7 +6,7 @@
 
 MacOS Sandbox (initially called Seatbelt) **limits applications** running inside the sandbox to the **allowed actions specified in the Sandbox profile** the app is running with. This helps to ensure that **the application will be accessing only expected resources**.
 
-Any app with the **entitlement** **`com.apple.security.app-sandbox`** will be executed inside the sandbox. **Apple binaries** are usually executed inside a Sandbox, and all applications from the **App Store have that entitlement**. So several applications will be executed inside the sandbox.
+Any app with the **entitlement** **`com.apple.security.app-sandbox`** will be executed inside the sandbox. **Apple binaries** are usually executed inside a Sandbox, and all applications from the **App Store have that entitlement**. So several applications will be executed inside the sandbox.<sup>[[4]](#references)</sup>
 
 In order to control what a process can or cannot do the **Sandbox has hooks** in almost any operation a process might try (including most syscalls) using **MACF**. However, d**epending** on the **entitlements** of the app the Sandbox might be more permissive with the process.
 
@@ -112,7 +112,7 @@ AAAhAboBAAAAAAgAAABZAO4B5AHjBMkEQAUPBSsGPwsgASABHgEgASABHwEf...
 ```
 
 > [!WARNING]
-> Everything created/modified by a Sandboxed application will get the **quarantine attribut**e. This will prevent a sandbox space by triggering Gatekeeper if the sandbox app tries to execute something with **`open`**.
+> Everything created or modified by a sandboxed application gets the **quarantine attribute**. This can prevent a sandbox escape by triggering Gatekeeper if the sandboxed application tries to execute something with **`open`**.
 
 ## Sandbox Profiles
 
@@ -123,7 +123,7 @@ Here you can find an example:
 ```scheme
 (version 1) ; First you get the version
 
-(deny default) ; Then you shuold indicate the default action when no rule applies
+(deny default) ; Then you should indicate the default action when no rule applies
 
 (allow network*) ; You can use wildcards and allow everything
 
@@ -139,9 +139,9 @@ Here you can find an example:
 ```
 
 > [!TIP]
-> Check this [**research**](https://reverse.put.as/2011/09/14/apple-sandbox-guide-v1-0/) **to check more actions that could be allowed or denied.**
+> Check this [**research**](https://reverse.put.as/2011/09/14/apple-sandbox-guide-v1-0/) **to check more actions that could be allowed or denied.**<sup>[[5]](#references)</sup>
 >
-> Note that in the compiled version of a profile the name of the operations are substituded by their entries in an array known by the dylib and the kext, making the compiled version shorter and more difficult to read.
+> Note that in the compiled version of a profile the name of the operations are substituted by their entries in an array known by the dylib and the kext, making the compiled version shorter and more difficult to read.
 
 Important **system services** also run inside their own custom **sandbox** such as the `mdnsresponder` service. You can view these custom **sandbox profiles** inside:
 
@@ -152,7 +152,7 @@ Important **system services** also run inside their own custom **sandbox** such 
 
 **App Store** apps use the **profile** **`/System/Library/Sandbox/Profiles/application.sb`**. You can check in this profile how entitlements such as **`com.apple.security.network.server`** allows a process to use the network.
 
-Then, some **Apple daemon services** use different profiles located in `/System/Library/Sandbox/Profiles/*.sb` or `/usr/share/sandbox/*.sb`. These sandboxes are applied in the main funciton calling the API `sandbox_init_XXX`.
+Then, some **Apple daemon services** use different profiles located in `/System/Library/Sandbox/Profiles/*.sb` or `/usr/share/sandbox/*.sb`. These sandboxes are applied in the main function calling the API `sandbox_init_XXX`.<sup>[[3]](#references)</sup>
 
 **SIP** is a Sandbox profile called platform_profile in `/System/Library/Sandbox/rootless.conf`.
 
@@ -218,8 +218,8 @@ log show --style syslog --predicate 'eventMessage contains[c] "sandbox"' --last 
 
 Bypasses examples:
 
-- [https://lapcatsoftware.com/articles/sandbox-escape.html](https://lapcatsoftware.com/articles/sandbox-escape.html)
-- [https://desi-jarvis.medium.com/office365-macos-sandbox-escape-fcce4fa4123c](https://desi-jarvis.medium.com/office365-macos-sandbox-escape-fcce4fa4123c) (they are able to write files outside the sandbox whose name starts with `~$`).
+- [https://lapcatsoftware.com/articles/sandbox-escape.html](https://lapcatsoftware.com/articles/sandbox-escape.html)<sup>[[6]](#references)</sup>
+- [https://desi-jarvis.medium.com/office365-macos-sandbox-escape-fcce4fa4123c](https://desi-jarvis.medium.com/office365-macos-sandbox-escape-fcce4fa4123c) (they are able to write files outside the sandbox whose name starts with `~$`).<sup>[[7]](#references)</sup>
 
 ### Sandbox Tracing
 
@@ -232,7 +232,7 @@ It's possible to trace all the checks sandbox performs every time an action is c
 (trace /tmp/trace.out)
 ```
 
-Ans then just execute something using that profile:
+And then just execute something using that profile:
 
 ```bash
 sandbox-exec -f /tmp/trace.sb /bin/ls
@@ -315,7 +315,7 @@ Note that extensions are very related to entitlements also, so having certain en
 
 ### **Check PID Privileges**
 
-[**According to this**](https://www.youtube.com/watch?v=mG715HcDgO8&t=3011s), the **`sandbox_check`** functions (it's a `__mac_syscall`), can check **if an operation is allowed or not** by the sandbox in a certain PID, audit token or unique ID.
+[**According to this**](https://www.youtube.com/watch?v=mG715HcDgO8&t=3011s), the **`sandbox_check`** functions (it's a `__mac_syscall`), can check **if an operation is allowed or not** by the sandbox in a certain PID, audit token or unique ID.<sup>[[8]](#references)</sup>
 
 The [**tool sbtool**](http://newosxbook.com/src.jl?tree=listings&file=sbtool.c) (find it [compiled here](https://newosxbook.com/articles/hitsb.html)) can check if a PID can perform a certain actions:
 
@@ -338,7 +338,7 @@ Note that to call the suspend function some entitlements are checked in order to
 
 ## mac_syscall
 
-This system call (#381) expects one string first argument which will indicate the module to run, and then a code in the second argument which will indicate the function to run. Then the third argument will depend on the function executed.
+This system call (#381) expects one string first argument which will indicate the module to run, and then a code in the second argument which will indicate the function to run. Then the third argument will depend on the function executed.<sup>[[2]](#references)</sup>
 
 The function `___sandbox_ms` call wraps `mac_syscall` indicating in the first argument `"Sandbox"` just like `___sandbox_msp` is a wrapper of `mac_set_proc` (#387). Then, the some of supported codes by `___sandbox_ms` can be found in this table:
 
@@ -381,14 +381,14 @@ Note that in iOS the kernel extension contains **hardcoded all the profiles** in
 
 ### MACF Hooks
 
-**`Sandbox.kext`** uses more than a hundred of hooks via MACF. Most of the hooks will just check some trivial cases that allows to perform the action if it not, they will call **`cred_sb_evalutate`** with the **credentials** from MACF and a number corresponding to the **operation** to perform and a **buffer** for the output.
+**`Sandbox.kext`** uses more than a hundred of hooks via MACF. Most of the hooks will just check some trivial cases that allows to perform the action if it not, they will call **`cred_sb_evalutate`** with the **credentials** from MACF and a number corresponding to the **operation** to perform and a **buffer** for the output.<sup>[[1]](#references)</sup>
 
 A good example of that is the function **`_mpo_file_check_mmap`** which hooked **`mmap`** and which will start checking if the new memory is going to be writable (and if not allow the execution), then it'll check if its used for the dyld shared cache and if so allow the execution, and finally it'll call **`sb_evaluate_internal`** (or one of its wrappers) to perform further allowance checks.
 
 Moreover, out of the hundred(s) hooks Sandbox uses, there are 3 in particular that are very interesting:
 
 - `mpo_proc_check_for`: It applies the profile if needed and if it wasn't previously applied
-- `mpo_vnode_check_exec`: Called when a process loads the associated binary, then a profile check is perfomed and also a check forbidding SUID/SGID executions.
+- `mpo_vnode_check_exec`: Called when a process loads the associated binary, then a profile check is performed and also a check forbidding SUID/SGID executions.
 - `mpo_cred_label_update_execve`: This is called when the label is assigned. This is the longest one as it's called when the binary is fully loaded but it hasn't been executed yet. It'll perform actions such as creating the sandbox object, attach sandbox struct to the kauth credentials, remove access to mach ports...
 
 Note that **`_cred_sb_evalutate`** is a wrapper over **`sb_evaluate_internal`** and this function gets the credentials passed and then performs the evaluation using the **`eval`** function which usually evaluates the **platform profile** which is by default applied to all processes and then the **specific process profile**. Note that the platform profile is one of the main components of **SIP** in macOS.
@@ -399,8 +399,13 @@ Sandbox also has a user daemon running exposing the XPC Mach service `com.apple.
 
 ## References
 
-- [**\*OS Internals Volume III**](https://newosxbook.com/home.html)
+- [1] [XNU — `security/mac_policy.h` (MACF hooks the Sandbox kext registers)](https://github.com/apple-oss-distributions/xnu/blob/main/security/mac_policy.h)
+- [2] [XNU — `security/mac_base.c` (`__mac_syscall`, the entry point behind `__sandbox_ms`)](https://github.com/apple-oss-distributions/xnu/blob/main/security/mac_base.c)
+- [3] [`sandbox_init(3)` man page](https://keith.github.io/xcode-man-pages/sandbox_init.3.html)
+- [4] [Apple Developer — App Sandbox](https://developer.apple.com/documentation/security/app-sandbox)
+- [5] [Apple Sandbox Guide v1.0](https://reverse.put.as/2011/09/14/apple-sandbox-guide-v1-0/)
+- [6] [Mac sandbox escape](https://lapcatsoftware.com/articles/sandbox-escape.html)
+- [7] [Office365 MacOS Sandbox Escape](https://desi-jarvis.medium.com/office365-macos-sandbox-escape-fcce4fa4123c)
+- [8] [HITBGSEC 2016 SG - The Apple Sandbox: Deeper Into The Quagmire - Jonathan Levin](https://www.youtube.com/watch?v=mG715HcDgO8&t=3011s)
 
 {{#include ../../../../banners/hacktricks-training.md}}
-
-

