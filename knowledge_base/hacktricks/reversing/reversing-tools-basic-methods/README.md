@@ -8,18 +8,36 @@ Software:
 
 - ReverseKit: [https://github.com/zer0condition/ReverseKit](https://github.com/zer0condition/ReverseKit)
 
+## Windows kernel debugging
+
+{{#ref}}
+windows-kernel-debugging-kernelflirt.md
+{{#endref}}
+
 ## Wasm decompiler / Wat compiler
 
 Online:
 
 - Use [https://webassembly.github.io/wabt/demo/wasm2wat/index.html](https://webassembly.github.io/wabt/demo/wasm2wat/index.html) to **decompile** from wasm (binary) to wat (clear text)
 - Use [https://webassembly.github.io/wabt/demo/wat2wasm/](https://webassembly.github.io/wabt/demo/wat2wasm/) to **compile** from wat to wasm
-- you can also try to use [https://wwwg.github.io/web-wasmdec/](https://wwwg.github.io/web-wasmdec/) to decompile
+- You can also try [web-wasmdec](https://wwwg.github.io/web-wasmdec/) for decompilation.
 
 Software:
 
 - [https://www.pnfsoftware.com/jeb/demo](https://www.pnfsoftware.com/jeb/demo)
 - [https://github.com/wwwg/wasmdec](https://github.com/wwwg/wasmdec)
+
+## Node.js / V8 cached bytecode
+
+{{#ref}}
+nodejs-v8-cached-bytecode.md
+{{#endref}}
+
+## Virtualized payloads and custom VMs
+
+{{#ref}}
+../../windows-hardening/virtualized-payload-execution.md
+{{#endref}}
 
 ## .NET decompiler
 
@@ -137,7 +155,7 @@ Right click any module in **Assembly Explorer** and click **Sort Assemblies**:
 
 Then, when you start debugging **the execution will be stopped when each DLL is loaded**, then, when rundll32 load your DLL the execution will be stopped.
 
-But, how can you get to the code of the DLL that was lodaded? Using this method, I don't know how.
+This method stops on module-load events, but reaching the loaded DLL's entry point is less direct than with the x64dbg workflow below.
 
 ### Using x64dbg/x32dbg
 
@@ -150,7 +168,7 @@ Notice that when the execution is stopped by any reason in win64dbg you can see 
 
 ![Using IDA - Using x64dbg/x32dbg: Notice that when the execution is stopped by any reason in win64dbg you can see in which code you are looking in the top of the win64dbg window](<../../images/image (842).png>)
 
-Then, looking to this ca see when the execution was stopped in the dll you want to debug.
+This indicator confirms when execution has stopped inside the DLL you want to debug.
 
 ## GUI Apps / Videogames
 
@@ -176,8 +194,8 @@ https://github.com/nongiach/arm_now
 
 ### Debugging a shellcode with blobrunner
 
-[**Blobrunner**](https://github.com/OALabs/BlobRunner) will **allocate** the **shellcode** inside a space of memory, will **indicate** you the **memory address** were the shellcode was allocated and will **stop** the execution.\
-Then, you need to **attach a debugger** (Ida or x64dbg) to the process and put a **breakpoint the indicated memory address** and **resume** the execution. This way you will be debugging the shellcode.
+[**BlobRunner**](https://github.com/OALabs/BlobRunner) allocates the **shellcode**, prints its **memory address**, and pauses execution.\
+Attach a debugger such as IDA or x64dbg, set a breakpoint at the printed address, and resume execution to debug the shellcode.
 
 The releases github page contains zips containing the compiled releases: [https://github.com/OALabs/BlobRunner/releases/tag/v0.0.5](https://github.com/OALabs/BlobRunner/releases/tag/v0.0.5)\
 You can find a slightly modified version of Blobrunner in the following link. In order to compile it just **create a C/C++ project in Visual Studio Code, copy and paste the code and build it**.
@@ -189,9 +207,9 @@ blobrunner.md
 
 ### Debugging a shellcode with jmp2it
 
-[**jmp2it** ](https://github.com/adamkramer/jmp2it/releases/tag/v1.4)is very similar to blobrunner. It will **allocate** the **shellcode** inside a space of memory, and start an **eternal loop**. You then need to **attach the debugger** to the process, **play start wait 2-5 secs and press stop** and you will find yourself inside the **eternal loop**. Jump to the next instruction of the eternal loop as it will be a call to the shellcode, and finally you will find yourself executing the shellcode.
+[**jmp2it**](https://github.com/adamkramer/jmp2it/releases/tag/v1.4) is similar to BlobRunner. It allocates the shellcode and enters an infinite loop. Attach the debugger, resume for **2–5 seconds**, pause inside that loop, and step to the following call that transfers execution to the allocated shellcode.
 
-![Debugging a shellcode with blobrunner - Debugging a shellcode with jmp2it: jmp2it is very similar to blobrunner. It will allocate the shellcode inside a space of memory, and start an...](<../../images/image (509).png>)
+![Debugger paused in jmp2it's infinite loop immediately before the call to the allocated shellcode](<../../images/image (509).png>)
 
 You can download a compiled version of [jmp2it inside the releases page](https://github.com/adamkramer/jmp2it/releases/).
 
@@ -201,17 +219,17 @@ You can download a compiled version of [jmp2it inside the releases page](https:/
 
 Note that Cutter allows you to "Open File" and "Open Shellcode". In my case when I opened the shellcode as a file it decompiled it correctly, but when I opened it as a shellcode it didn't:
 
-![Debugging a shellcode with jmp2it - Debugging shellcode using Cutter: Note that Cutter allows you to "Open File" and "Open Shellcode". In my case when I opened the shellcode as a file it...](<../../images/image (562).png>)
+![Cutter showing different analysis results when opening the same bytes as a file or as shellcode](<../../images/image (562).png>)
 
 In order to start the emulation in the place you want to, set a bp there and apparently cutter will automatically start the emulation from there:
 
-![Debugging a shellcode with jmp2it - Debugging shellcode using Cutter: In order to start the emulation in the place you want to, set a bp there and apparently cutter will automatically...](<../../images/image (589).png>)
+![Setting a breakpoint at the desired shellcode entry before starting Cutter emulation](<../../images/image (589).png>)
 
-![Debugging a shellcode with jmp2it - Debugging shellcode using Cutter: In order to start the emulation in the place you want to, set a bp there and apparently cutter will automatically...](<../../images/image (387).png>)
+![Cutter emulator paused at the selected shellcode breakpoint](<../../images/image (387).png>)
 
 You can see the stack for example inside a hex dump:
 
-![Debugging a shellcode with jmp2it - Debugging shellcode using Cutter: You can see the stack for example inside a hex dump](<../../images/image (186).png>)
+![Viewing the emulated shellcode stack in Cutter's hex dump](<../../images/image (186).png>)
 
 ### Deobfuscating shellcode and getting executed functions
 
@@ -229,7 +247,7 @@ scdbg.exe -f shellcode /foff 0x0000004D #Start the executing in that offset
 
 scDbg also counts with a graphical launcher where you can select the options you want and execute the shellcode
 
-![Debugging shellcode using Cutter - Deobfuscating shellcode and getting executed functions: scDbg also counts with a graphical launcher where you can select the options you want and...](<../../images/image (258).png>)
+![scDbg graphical launcher for selecting shellcode emulation and tracing options](<../../images/image (258).png>)
 
 The **Create Dump** option will dump the final shellcode if any change is done to the shellcode dynamically in memory (useful to download the decoded shellcode). The **start offset** can be useful to start the shellcode at a specific offset. The **Debug Shell** option is useful to debug the shellcode using the scDbg terminal (however I find any of the options explained before better for this matter as you will be able to use Ida or x64dbg).
 
@@ -245,7 +263,7 @@ Upload your shellcode file as input and use the following recipe to decompile it
 (x ^ y) + 2 * (x & y) == x + y
 ```
 
-If you simplify this kind of expression with generic algebra tooling you can easily get a wrong result because the bit-width semantics were ignored.
+If you simplify this kind of expression with generic algebra tooling you can easily get a wrong result because the bit-width semantics were ignored.<sup>[[1]](#references)</sup>
 
 ### Practical workflow
 
@@ -257,9 +275,52 @@ If you simplify this kind of expression with generic algebra tooling you can eas
    - **Mixed**: products and bitwise logic are interleaved, often with repeated subexpressions
 3. **Verify every candidate rewrite** with random testing or an SMT proof. If the equivalence cannot be proven, keep the original expression instead of guessing.
 
+### Bypass flattened control flow with a narrow execution slice
+
+Recovering the complete control-flow graph is often unnecessary. With control-flow flattening, opaque predicates, large dispatchers, or MBA-heavy code, follow references from encrypted blobs and output buffers to the smallest routine that transforms them. Then reproduce only that data-flow slice, or execute it independently; the dispatcher is not part of the required solution if the relevant state can be initialized directly.<sup>[[7]](#references)</sup>
+
+A practical workflow is:<sup>[[7]](#references)</sup>
+
+1. Inventory executable and data sections, relocations, and cross-references. Dump candidate tables from `.rodata` while preserving their byte order and element width.
+2. Identify the last routine that writes the plaintext or output buffer. Record its inputs, referenced tables, imported calls, and required global state.
+3. Lift only those operations into a fixed-width Python model. If the slice still depends on too much state, invoke the routine under Unicorn, QEMU, or a debugger and hook irrelevant imports instead of emulating the whole program.
+4. Validate that the extractor actually derives its output from the supplied binary: remove silent fallbacks, search it for embedded answers, and run it against unseen builds with changed strings, keys, identifiers, layouts, and obfuscation seeds.
+
+Useful first-pass commands are:<sup>[[7]](#references)</sup>
+
+```bash
+readelf -SW target
+objdump -s -j .rodata target > rodata.txt
+objdump -d target | rg 'adrp|add|ldr|str'
+```
+
+#### Detect MBA expressions that are disguised constants
+
+An apparently input-dependent byte expression may cancel its input completely. After extracting its tables, evaluate the expression over the complete 8-bit domain; a singleton output set proves that byte is constant without recovering the surrounding state machine.<sup>[[7]](#references)</sup>
+
+```python
+def mba(a, b, c, d, e, x):
+    return ((((a | (~x & 0xff)) & c) +
+             ((x | b) & d)) ^ e) & 0xff
+
+decoded = bytearray()
+for row in zip(A, B, C, D, E):
+    outputs = {mba(*row, x) for x in range(256)}
+    if len(outputs) != 1:
+        raise ValueError("expression depends on x")
+    decoded.append(outputs.pop())
+print(decoded)
+```
+
+Keep the final mask because the original addition has byte-width wraparound. For a wider domain, ask an SMT solver whether `f(x1) != f(x2)` is satisfiable for two same-width symbolic inputs: `unsat` proves invariance, while `sat` provides a counterexample and means the input cannot be discarded.<sup>[[7]](#references)</sup>
+
+#### Recognize environment-bound decoding
+
+Anti-analysis checks need not branch or crash. A decoder can mix a sensor result into a key bit, an opaque-predicate constant, or flattened-dispatcher state, continue normally, and produce plausible but false plaintext in an emulator. Therefore, patching only visible failure branches is insufficient; trace data dependencies from environment probes into decoder state, compare the same slice on the authentic device and emulator, and test how forcing each sensor result changes the final buffer.<sup>[[7]](#references)</sup>
+
 ### CoBRA
 
-[**CoBRA**](https://github.com/trailofbits/CoBRA) is a practical MBA simplifier for malware analysis and protected-binary reversing. It classifies the expression and routes it through specialized pipelines instead of applying one generic rewrite pass to everything.
+[**CoBRA**](https://github.com/trailofbits/CoBRA) is a practical MBA simplifier for malware analysis and protected-binary reversing. It classifies the expression and routes it through specialized pipelines instead of applying one generic rewrite pass to everything.<sup>[[2]](#references)</sup>
 
 Quick usage:
 
@@ -310,12 +371,12 @@ satisfiability-modulo-theories-smt-z3.md
 
 ## [Movfuscator](https://github.com/xoreaxeaxeax/movfuscator)
 
-This obfuscator **modifies all the instructions for `mov`**(yeah, really cool). It also uses interruptions to change executions flows. For more information about how does it works:
+This obfuscator replaces program operations with `mov`-based instruction sequences and uses signal/exception handling to alter control flow. For details:
 
 - [https://www.youtube.com/watch?v=2VF_wPkiBJY](https://www.youtube.com/watch?v=2VF_wPkiBJY)
 - [https://github.com/xoreaxeaxeax/movfuscator/blob/master/slides/domas_2015_the_movfuscator.pdf](https://github.com/xoreaxeaxeax/movfuscator/blob/master/slides/domas_2015_the_movfuscator.pdf)
 
-If you are lucky [demovfuscator](https://github.com/kirschju/demovfuscator) will deofuscate the binary. It has several dependencies
+For supported binaries, [demovfuscator](https://github.com/kirschju/demovfuscator) can deobfuscate the result. It has several dependencies.
 
 ```
 apt-get install libcapstone-dev
@@ -330,10 +391,49 @@ If you are playing a **CTF, this workaround to find the flag** could be very use
 
 To find the **entry point** search the functions by `::main` like in:
 
-![Movfuscator - Rust: To find the entry point search the functions by ::main like in](<../../images/image (1080).png>)
+![Finding a Rust entry point in Ghidra by searching function names for double-colon main](<../../images/image (1080).png>)
 
 In this case the binary was called authenticator, so it's pretty obvious that this is the interesting main function.\
 Having the **name** of the **functions** being called, search for them on the **Internet** to learn about their **inputs** and **outputs**.
+
+### Recovering Rust strings from ELF firmware
+
+In **Rust ELF** binaries, many static strings are not referenced as C-style NUL-terminated pointers. A common `rustc` layout is a **pointer/length tuple** inside **`.data.rel.ro`** pointing into the real string blob stored in **`.rodata`**:
+
+```text
+[8-byte little-endian pointer][8-byte little-endian length]
+```
+
+This means `strings` or default Ghidra analysis may merge adjacent strings or miss cross-references entirely.<sup>[[3]](#references)</sup>
+
+Quick workflow:
+
+```bash
+readelf -S <bin>
+objdump -h <bin>
+```
+
+1. Get the virtual address and size of **`.rodata`**.
+2. Enumerate **`.data.rel.ro`** one word at a time.
+3. Treat any value inside the `.rodata` address range as a candidate string pointer.
+4. Treat the next word as the candidate length.
+5. Apply sanity filters (for example, keep lengths between **4** and **100** bytes).
+6. Read exactly `length` bytes from `.rodata` instead of scanning until `0x00`.
+
+Minimal extractor logic:
+
+```python
+for off in range(0, len(data_rel_ro), 8):
+    ptr = u64(data_rel_ro[off:off+8])
+    length = u64(data_rel_ro[off+8:off+16])
+    if rodata_start <= ptr < rodata_end and 4 <= length <= 100:
+        start = ptr - rodata_start
+        print(rodata[start:start+length])
+```
+
+This is especially useful in firmware reversing because recovered Rust strings often reveal **HTTP routes, RPC names, log messages, assertions, filenames, config keys, command handlers, and auth-related logic**.
+
+If Ghidra misses those strings, run a custom script/plugin that applies the same heuristic and creates string data at the referenced `.rodata` offsets. The published `rust-strings` and `RustStrings.py` tools from Pen Test Partners are good references for adapting the idea to other **word sizes, endianness, and section layouts**.<sup>[[4]](#references)</sup><sup>[[5]](#references)</sup>
 
 ## **Delphi**
 
@@ -341,19 +441,51 @@ For Delphi compiled binaries you can use [https://github.com/crypto2011/IDR](htt
 
 If you have to reverse a Delphi binary I would suggest you to use the IDA plugin [https://github.com/Coldzer0/IDA-For-Delphi](https://github.com/Coldzer0/IDA-For-Delphi)
 
-Just press **ATL+f7** (import python plugin in IDA) and select the python plugin.
+Press **Alt+F7** in IDA to load a Python plugin, then select the plugin file.
 
 This plugin will execute the binary and resolve function names dynamically at the start of the debugging. After starting the debugging press again the Start button (the green one or f9) and a breakpoint will hit in the beginning of the real code.
 
-It is also very interesting because if you press a button in the graphic application the debugger will stop in the function executed by that bottom.
+If you press a button in the graphical application, the debugger can stop in the function invoked by that button.
 
 ## Golang
 
-If you have to reverse a Golang binary I would suggest you to use the IDA plugin [https://github.com/sibears/IDAGolangHelper](https://github.com/sibears/IDAGolangHelper)
+For ordinary Go binaries, [IDAGolangHelper](https://github.com/sibears/IDAGolangHelper) can recover runtime structures and improve function names in IDA. Load its Python plugin with **Alt+F7**.
 
-Just press **ATL+f7** (import python plugin in IDA) and select the python plugin.
+### Recover metadata without the symbol table
 
-This will resolve the names of the functions.
+A stripped Go executable still needs runtime metadata to map program counters to functions. [GoReSym](https://github.com/mandiant/GoReSym) locates and parses structures such as `pclntab` and `moduledata` using code derived from the Go runtime. This can recover function boundaries, names, source paths, types and build details without relying on the conventional symbol table.<sup>[[9]](#references)[[13]](#references)</sup>
+
+```bash
+GoReSym.exe -t -d -p /path/to/sample.exe > goresym.json
+```
+
+An obfuscator can leave those structures usable while replacing the recovered names. Garble, for example, hashes identifiers and package paths and removes build, module and debug information.<sup>[[12]](#references)</sup> The obfuscated package token must remain consistent across functions from that package. Group functions by the repeated token, infer one package from its callees, strings and APIs, then propagate that package label to the entire group.<sup>[[13]](#references)</sup>
+
+### Recover Garble names with GoResolver
+
+[GoResolver](https://github.com/volexity/GoResolver) combines runtime-symbol extraction with clean-reference generation and control-flow-graph (CFG) matching. Use this sequence:<sup>[[10]](#references)[[13]](#references)</sup>
+
+1. **Identify the compiler version.** Try `BuildInfo` and embedded version strings first. If the obfuscator removed them, compare portions of the bundled Go runtime with versioned reference runtimes. In Volexity's tests, about `2%` of the runtime was enough to distinguish major Go versions. Treat this as an empirical optimization, not a universal threshold.<sup>[[13]](#references)</sup>
+2. **Build matching references.** Generate clean binaries for the identified Go version, target architecture and likely libraries. Matching the toolchain reduces compiler-generated CFG differences.<sup>[[10]](#references)[[13]](#references)</sup>
+3. **Compare functions.** GoGrapher matches function CFGs and emits normalized scores from `0.0` to `1.0`. Its basic-block matching is based on a weighted comparison of similar instructions. High-confidence matches map randomized functions to the clean implementation. Weaker matches can still identify a package or module.<sup>[[8]](#references)[[11]](#references)[[13]](#references)</sup>
+4. **Validate and import.** Confirm proposed names with call relationships, constants, strings and side effects, then import the JSON report with the GoResolver plugin for IDA or Ghidra.<sup>[[10]](#references)[[13]](#references)</sup>
+
+Install the toolchain and run the combined extractor and graph matcher:<sup>[[10]](#references)</sup>
+
+```bash
+python3 -m venv goresolver-env
+source goresolver-env/bin/activate
+pip install goresolver
+
+# Automatic Go-version detection and reference selection
+goresolver resolve -o report.json /path/to/sample.exe
+
+# Override the version/libraries and confidence threshold when known
+goresolver resolve -v go1.23.4 -l os/exec net/http \
+  -t 0.9 -o report.json /path/to/sample.exe
+```
+
+The default significant-match threshold is `0.9`. The `--extract` and `--graph` switches can isolate either stage, while the default runs both because the recovered runtime metadata and CFG evidence complement each other.<sup>[[10]](#references)</sup> CFG scores are heuristic: inlining, build flags, architecture and library-version differences can change graph shape, so preserve unresolved functions instead of forcing low-confidence names.<sup>[[13]](#references)</sup>
 
 ## Compiled Python
 
@@ -364,7 +496,7 @@ In this page you can find how to get the python code from an ELF/EXE python comp
 ../../generic-methodologies-and-resources/basic-forensic-methodology/specific-software-file-type-tricks/.pyc.md
 {{#endref}}
 
-## GBA - Game Body Advance
+## GBA - Game Boy Advance
 
 If you get the **binary** of a GBA game you can use different tools to **emulate** and **debug** it:
 
@@ -468,14 +600,14 @@ The last if is checking **`uVar4`** is in the **last Keys** and not is the curre
 In the previous code you can see that we are comparing **uVar1** (the place where the **value of the pressed button** is) with some values:
 
 - First, it's compared with the **value 4** (**SELECT** button): In the challenge this button clears the screen
-- Then, it's comparing it with the **value 8** (**START** button): In the challenge this checks is the code is valid to get the flag.
+- Then it compares the value with **8** (the **START** button); in this challenge, that path checks whether the entered code is valid.
   - In this case the var **`DAT_030000d8`** is compared with 0xf3 and if the value is the same some code is executed.
-- In any other cases, some cont (`DAT_030000d4`) is checked. It's a cont because it's adding 1 right after entering in the code.\
-  **I**f less than 8 something that involves **adding** values to **`DAT_030000d8`** is done (basically it's adding the values of the keys pressed in this variable as long as the cont is less than 8).
+- In every other case, a counter (`DAT_030000d4`) is checked and incremented.\
+  While the counter is below 8, the pressed-key values are accumulated in `DAT_030000d8`.
 
 So, in this challenge, knowing the values of the buttons, you needed to **press a combination with a length smaller than 8 that the resulting addition is 0xf3.**
 
-**Reference for this tutorial:** [**https://exp.codes/Nostalgia/**](https://exp.codes/Nostalgia/)
+**Reference for this tutorial:** [archived Nostalgia challenge writeup](https://web.archive.org/web/20220328215728/https://exp.codes/Nostalgia/).<sup>[[6]](#references)</sup>
 
 ## Game Boy
 
@@ -491,7 +623,18 @@ https://www.youtube.com/watch?v=VVbRe7wr3G4
 
 ## References
 
-- [Simplifying MBA obfuscation with CoBRA](https://blog.trailofbits.com/2026/04/03/simplifying-mba-obfuscation-with-cobra/)
-- [Trail of Bits CoBRA repository](https://github.com/trailofbits/CoBRA)
+- [1] [Simplifying MBA obfuscation with CoBRA](https://blog.trailofbits.com/2026/04/03/simplifying-mba-obfuscation-with-cobra/)
+- [2] [Trail of Bits CoBRA repository](https://github.com/trailofbits/CoBRA)
+- [3] [Decoding Rust strings - Pen Test Partners](https://www.pentestpartners.com/security-blog/decoding-rust-strings/)
+- [4] [pentestpartners/reverse-engineering - rust-strings](https://github.com/pentestpartners/reverse-engineering/blob/main/rust-strings)
+- [5] [pentestpartners/reverse-engineering - RustStrings.py](https://github.com/pentestpartners/reverse-engineering/blob/main/RustStrings.py)
+- [6] [Nostalgia - GBA reversing tutorial (archived)](https://web.archive.org/web/20220328215728/https://exp.codes/Nostalgia/)
+- [7] [Defeating AI-Assisted Reverse Engineering, or at Least Trying To](http://blog.quarkslab.com/defeating-ai-assisted-reverse-engineering-or-at-least-trying-to.html)
+- [8] [An Approach to Comparing Control Flow Graphs Based on Basic Block Matching](https://www.ijcse.com/docs/INDJCSE20-11-03-237.pdf)
+- [9] [Mandiant GoReSym](https://github.com/mandiant/GoReSym)
+- [10] [Volexity GoResolver](https://github.com/volexity/GoResolver)
+- [11] [Volexity GoGrapher](https://github.com/volexity/GoGrapher)
+- [12] [Garble obfuscation mechanism](https://github.com/burrowers/garble#mechanism)
+- [13] [GoResolver: Using Control-Flow Graph Similarity to Automatically Deobfuscate Golang Binaries](https://volexity.com/blog/2025/04/01/goresolver-using-control-flow-graph-similarity-to-deobfuscate-golang-binaries-automatically)
 
 {{#include ../../banners/hacktricks-training.md}}

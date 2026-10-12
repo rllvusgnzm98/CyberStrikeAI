@@ -39,14 +39,14 @@ Notes:
 - Expect a timeout error when starting a non-service EXE; execution still happens.
 - To remain more OPSEC-friendly, prefer fileless commands (cmd /c, powershell -enc) or delete dropped artifacts.
 
-Find more detailed steps in: https://blog.ropnop.com/using-credentials-to-own-windows-boxes-part-2-psexec-and-services/
+Find more detailed steps in: https://blog.ropnop.com/using-credentials-to-own-windows-boxes-part-2-psexec-and-services/<sup>[[3]](#references)</sup>
 
 ## Tooling and examples
 
 ### Sysinternals PsExec.exe
 
 - Classic admin tool that uses SMB to drop PSEXESVC.exe in ADMIN$, installs a temporary service (default name PSEXESVC), and proxies I/O over named pipes.
-- Example usages:
+- Example usages:<sup>[[1]](#references)</sup>
 
 ```cmd
 :: Interactive SYSTEM shell on remote host
@@ -125,7 +125,7 @@ cme smb HOST -u USER -H NTHASH -x "ipconfig /all" --exec-method smbexec
 Typical host/network artifacts when using PsExec-like techniques:
 - Security 4624 (Logon Type 3) and 4672 (Special Privileges) on target for the admin account used.
 - Security 5140/5145 File Share and File Share Detailed events showing ADMIN$ access and create/write of service binaries (e.g., PSEXESVC.exe or random 8-char .exe).
-- Security 7045 Service Install on target: service names like PSEXESVC, RemComSvc, or custom (-r / -service-name).
+- **System** 7045 from Service Control Manager for service installation on the target: names like PSEXESVC, RemComSvc, or custom (`-r` / `-service-name`). This proves a service was installed, not that its image ran. Correlate its timestamp and image path with process events or a matching service-image prefetch entry when available.<sup>[[4]](#references)</sup>
 - Sysmon 1 (Process Create) for services.exe or the service image, 3 (Network Connect), 11 (File Create) in C:\Windows\, 17/18 (Pipe Created/Connected) for pipes such as \\.\pipe\psexesvc, \\.\pipe\remcom_*, or randomized equivalents.
 - Registry artifact for Sysinternals EULA: HKCU\Software\Sysinternals\PsExec\EulaAccepted=0x1 on the operator host (if not suppressed).
 
@@ -141,14 +141,13 @@ Hunting ideas
 - Service start times out but payload ran: expected if not a real service binary; capture output to a file or use smbexec for live I/O.
 
 ## Hardening notes
-- Windows 11 24H2 and Windows Server 2025 require SMB signing by default for outbound (and Windows 11 inbound) connections. This does not break legitimate PsExec usage with valid creds but prevents unsigned SMB relay abuse and may impact devices that don’t support signing.
-- New SMB client NTLM blocking (Windows 11 24H2/Server 2025) can prevent NTLM fallback when connecting by IP or to non-Kerberos servers. In hardened environments this will break NTLM-based PsExec/SMBExec; use Kerberos (hostname/FQDN) or configure exceptions if legitimately needed.
+- Windows 11 24H2 and Windows Server 2025 require SMB signing by default for outbound (and Windows 11 inbound) connections. This does not break legitimate PsExec usage with valid creds but prevents unsigned SMB relay abuse and may impact devices that don’t support signing.<sup>[[2]](#references)</sup>
+- New SMB client NTLM blocking (Windows 11 24H2/Server 2025) can prevent NTLM fallback when connecting by IP or to non-Kerberos servers. In hardened environments this will break NTLM-based PsExec/SMBExec; use Kerberos (hostname/FQDN) or configure exceptions if legitimately needed.<sup>[[2]](#references)</sup>
 - Principle of least privilege: minimize local admin membership, prefer Just-in-Time/Just-Enough Admin, enforce LAPS, and monitor/alert on 7045 service installs.
 
 ## See also
 
 - WMI-based remote exec (often more fileless):
-
 
 {{#ref}}
 ./wmiexec.md
@@ -156,16 +155,15 @@ Hunting ideas
 
 - WinRM-based remote exec:
 
-
 {{#ref}}
 ./winrm.md
 {{#endref}}
 
-
-
 ## References
 
-- PsExec - Sysinternals | Microsoft Learn: https://learn.microsoft.com/sysinternals/downloads/psexec
-- SMB security hardening in Windows Server 2025 & Windows 11 (signing by default, NTLM blocking): https://techcommunity.microsoft.com/blog/filecab/smb-security-hardening-in-windows-server-2025--windows-11/4226591
+- [1] [PsExec - Sysinternals | Microsoft Learn](https://learn.microsoft.com/sysinternals/downloads/psexec)
+- [2] [SMB security hardening in Windows Server 2025 & Windows 11](https://techcommunity.microsoft.com/blog/filecab/smb-security-hardening-in-windows-server-2025--windows-11/4226591)
+- [3] [Using Credentials to Own Windows Boxes - Part 2 (PSExec and Services)](https://blog.ropnop.com/using-credentials-to-own-windows-boxes-part-2-psexec-and-services/)
+- [4] [Microsoft – Troubleshoot unexpected reboots using system event logs](https://learn.microsoft.com/en-us/troubleshoot/windows-server/performance/troubleshoot-unexpected-reboots-system-event-logs)
 
 {{#include ../../banners/hacktricks-training.md}}
