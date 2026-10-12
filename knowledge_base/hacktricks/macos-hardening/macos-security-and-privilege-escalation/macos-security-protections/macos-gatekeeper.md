@@ -141,6 +141,16 @@ It's possible to **check if an App will be allowed by GateKeeper** with:
 spctl --assess -v /Applications/App.app
 ```
 
+On macOS 14 and later, **`syspolicy_check`** is a useful higher-level pre-distribution check for an application bundle. It produces more actionable trusted-execution diagnostics than a bare `spctl` result, although Apple still recommends testing the real download/extraction/first-launch path because that also exercises quarantine propagation.<sup>[[14]](#references)</sup>
+
+```bash
+# Check the complete app bundle before distribution
+syspolicy_check distribution /path/to/App.app
+
+# Keep the lower-level assessment when comparing policy outcomes
+spctl --assess --type execute -vv /path/to/App.app
+```
+
 It's possible to add new rules in GateKeeper to allow the execution of certain apps with:
 
 ```bash
@@ -162,8 +172,8 @@ Regarding **kernel extensions**, the folder `/var/db/SystemPolicyConfiguration` 
 
 #### Managing Gatekeeper on macOS 15 (Sequoia) and later
 
-- The long‑standing Finder **Ctrl+Open / Right‑click → Open** bypass has been removed; users must explicitly allow a blocked app from **System Settings → Privacy & Security → Open Anyway** after the first block dialog.
-- `spctl --master-disable/--global-disable` are no longer accepted; `spctl` is effectively read‑only for assessment and label management while policy enforcement is configured through UI or MDM.
+- The long‑standing Finder **Ctrl+Open / Right‑click → Open** bypass has been removed; users must explicitly allow a blocked app from **System Settings → Privacy & Security → Open Anyway** after the first block dialog.<sup>[[4]](#references)</sup>
+- `spctl --master-disable/--global-disable` are no longer accepted as unattended policy changes. Operations that modify the rule database or global assessment state are deprecated, so use `spctl` for assessment and configure enforcement through the UI or MDM.
 
 Starting in macOS 15 Sequoia, end users can no longer toggle Gatekeeper policy from `spctl`. Management is performed via System Settings or by deploying an MDM configuration profile with the `com.apple.systempolicy.control` payload. Example profile snippet to allow App Store and identified developers (but not "Anywhere"):
 
@@ -256,7 +266,7 @@ com.apple.macl:
 00000040  00 00 00 00 00 00 00 00                          |........|
 00000048
 com.apple.quarantine: 00C1;607842eb;Brave;F643CD5F-6071-46AB-83AB-390BA944DEC5
-# 00c1 -- It has been allowed to eexcute this file (QTN_FLAG_USER_APPROVED = 0x0040)
+# 00c1 -- The user has been allowed to execute this file (QTN_FLAG_USER_APPROVED = 0x0040)
 # 607842eb -- Timestamp
 # Brave -- App
 # F643CD5F-6071-46AB-83AB-390BA944DEC5 -- UID assigned to the file downloaded
@@ -365,7 +375,7 @@ It also uses a couple of MIBs:
 
 #### Provenance xattr (Ventura and later)
 
-macOS 13 Ventura introduced a separate provenance mechanism which is populated the first time a quarantined app is allowed to run. Two artefacts are created:
+macOS 13 Ventura introduced a separate provenance mechanism which is populated the first time a quarantined app is allowed to run.<sup>[[2]](#references)</sup> Two artefacts are created:
 
 - The `com.apple.provenance` xattr on the `.app` bundle directory (fixed-size binary value containing a primary key and flags).
 - A row in the `provenance_tracking` table inside the ExecPolicy database at `/var/db/SystemPolicyConfiguration/ExecPolicy/` storing the app’s cdhash and metadata.
@@ -427,39 +437,39 @@ Any way to bypass Gatekeeper (manage to make the user download something and exe
 
 ### [CVE-2021-1810](https://labs.withsecure.com/publications/the-discovery-of-cve-2021-1810)
 
-It was observed that if the **Archive Utility** is used for extraction, files with **paths exceeding 886 characters** do not receive the com.apple.quarantine extended attribute. This situation inadvertently allows those files to **circumvent Gatekeeper's** security checks.
+It was observed that if the **Archive Utility** is used for extraction, files with **paths exceeding 886 characters** do not receive the com.apple.quarantine extended attribute. This situation inadvertently allows those files to **circumvent Gatekeeper's** security checks.<sup>[[5]](#references)</sup>
 
-Check the [**original report**](https://labs.withsecure.com/publications/the-discovery-of-cve-2021-1810) for more information.
+Check the [**original report**](https://labs.withsecure.com/publications/the-discovery-of-cve-2021-1810) for more information.<sup>[[5]](#references)</sup>
 
 ### [CVE-2021-30990](https://ronmasas.com/posts/bypass-macos-gatekeeper)
 
 When an application is created with **Automator**, the information about what it needs to execute is inside `application.app/Contents/document.wflow` not in the executable. The executable is just a generic Automator binary called **Automator Application Stub**.
 
-Therefore, you could make `application.app/Contents/MacOS/Automator\ Application\ Stub` **point with a symbolic link to another Automator Application Stub inside the system** and it will execute what is inside `document.wflow` (you script) **without triggering Gatekeeper** because the actual executable doesn't have the quarantine xattr.
+Therefore, you could make `application.app/Contents/MacOS/Automator\ Application\ Stub` **point with a symbolic link to another Automator Application Stub inside the system** and it will execute what is inside `document.wflow` (you script) **without triggering Gatekeeper** because the actual executable doesn't have the quarantine xattr.<sup>[[6]](#references)</sup>
 
 Example os expected location: `/System/Library/CoreServices/Automator\ Application\ Stub.app/Contents/MacOS/Automator\ Application\ Stub`
 
-Check the [**original report**](https://ronmasas.com/posts/bypass-macos-gatekeeper) for more information.
+Check the [**original report**](https://ronmasas.com/posts/bypass-macos-gatekeeper) for more information.<sup>[[6]](#references)</sup>
 
 ### [CVE-2022-22616](https://www.jamf.com/blog/jamf-threat-labs-safari-vuln-gatekeeper-bypass/)
 
-In this bypass a zip file was created with an application starting to compress from `application.app/Contents` instead of `application.app`. Therefore, the **quarantine attr** was applied to all the **files from `application.app/Contents`** but **not to `application.app`**, which is was Gatekeeper was checking, so Gatekeeper was bypassed because when `application.app` was triggered it **didn't have the quarantine attribute.**
+In this bypass a zip file was created with an application starting to compress from `application.app/Contents` instead of `application.app`. Therefore, the **quarantine attr** was applied to all the **files from `application.app/Contents`** but **not to `application.app`**, which is was Gatekeeper was checking, so Gatekeeper was bypassed because when `application.app` was triggered it **didn't have the quarantine attribute.**<sup>[[7]](#references)</sup>
 
 ```bash
 zip -r test.app/Contents test.zip
 ```
 
-Check the [**original report**](https://www.jamf.com/blog/jamf-threat-labs-safari-vuln-gatekeeper-bypass/) for more information.
+Check the [**original report**](https://www.jamf.com/blog/jamf-threat-labs-safari-vuln-gatekeeper-bypass/) for more information.<sup>[[7]](#references)</sup>
 
 ### [CVE-2022-32910](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-32910)
 
-Even if the components are different the exploitation of this vulnerability is very similar to the previous one. In this case with will generate an Apple Archive from **`application.app/Contents`** so **`application.app` won't get the quarantine attr** when decompressed by **Archive Utility**.
+Even if the components are different the exploitation of this vulnerability is very similar to the previous one. In this case with will generate an Apple Archive from **`application.app/Contents`** so **`application.app` won't get the quarantine attr** when decompressed by **Archive Utility**.<sup>[[8]](#references)</sup>
 
 ```bash
 aa archive -d test.app/Contents -o test.app.aar
 ```
 
-Check the [**original report**](https://www.jamf.com/blog/jamf-threat-labs-macos-archive-utility-vulnerability/) for more information.
+Check the [**original report**](https://www.jamf.com/blog/jamf-threat-labs-macos-archive-utility-vulnerability/) for more information.<sup>[[8]](#references)</sup>
 
 ### [CVE-2022-42821](https://www.microsoft.com/en-us/security/blog/2022/12/19/gatekeepers-achilles-heel-unearthing-a-macos-vulnerability/)
 
@@ -472,7 +482,7 @@ xattr -w attrname vale /tmp/no-attr
 xattr: [Errno 13] Permission denied: '/tmp/no-attr'
 ```
 
-Moreover, **AppleDouble** file format copies a file including its ACEs.
+Moreover, **AppleDouble** file format copies a file including its ACEs.<sup>[[9]](#references)</sup>
 
 In the [**source code**](https://opensource.apple.com/source/Libc/Libc-391/darwin/copyfile.c.auto.html) it's possible to see that the ACL text representation stored inside the xattr called **`com.apple.acl.text`** is going to be set as ACL in the decompressed file. So, if you compressed an application into a zip file with **AppleDouble** file format with an ACL that prevents other xattrs to be written to it... the quarantine xattr wasn't set into de application:
 
@@ -483,7 +493,7 @@ python3 -m http.server
 # Download the zip from the browser and decompress it, the file should be without a quarantine xattr
 ```
 
-Check the [**original report**](https://www.microsoft.com/en-us/security/blog/2022/12/19/gatekeepers-achilles-heel-unearthing-a-macos-vulnerability/) for more information.
+Check the [**original report**](https://www.microsoft.com/en-us/security/blog/2022/12/19/gatekeepers-achilles-heel-unearthing-a-macos-vulnerability/) for more information.<sup>[[9]](#references)</sup>
 
 Note that this could also be be exploited with AppleArchives:
 
@@ -496,11 +506,11 @@ aa archive -d app -o test.aar
 
 ### [CVE-2023-27943](https://blog.f-secure.com/discovery-of-gatekeeper-bypass-cve-2023-27943/)
 
-It was discovered that **Google Chrome wasn't setting the quarantine attribute** to downloaded files because of some macOS internal problems.
+It was discovered that **Google Chrome wasn't setting the quarantine attribute** to downloaded files because of some macOS internal problems.<sup>[[10]](#references)</sup>
 
 ### [CVE-2023-27951](https://redcanary.com/blog/gatekeeper-bypass-vulnerabilities/)
 
-AppleDouble file formats store the attributes of a file in a separate file starting by `._`, this helps to copy dile attributes **across macOS machines**. However, it was noticed that after decompressing an AppleDouble file, the file starting with `._` **wasn't given the quarantine attribute**.
+AppleDouble stores a file's attributes in a separate file whose name starts with `._`; this helps copy file attributes **across macOS machines**. However, after decompressing an AppleDouble file, the file starting with `._` **wasn't given the quarantine attribute**.<sup>[[11]](#references)</sup>
 
 ```bash
 mkdir test
@@ -509,7 +519,7 @@ echo b > test/b
 echo ._a > test/._a
 aa archive -d test/ -o test.aar
 
-# If you downloaded the resulting test.aar and decompress it, the file test/._a won't have a quarantitne attribute
+# If you download and decompress the resulting test.aar, test/._a won't have a quarantine attribute
 ```
 
 Being able to create a file that won't have the quarantine attribute set, it was **possible to bypass Gatekeeper.** The trick was to **create a DMG file application** using the AppleDouble name convention (start it with `._`) and create a **visible file as a sym link to this hidden** file without the quarantine attribute.\
@@ -533,19 +543,34 @@ aa archive -d s/ -o app.aar
 
 ### [CVE-2023-41067]
 
-A Gatekeeper bypass fixed in macOS Sonoma 14.0 allowed crafted apps to run without prompting. Details were disclosed publicly after patching and the issue was actively exploited in the wild before fix. Ensure Sonoma 14.0 or later is installed.
+Apple fixed a LaunchServices logic error in macOS Sonoma 14.0 through improved checks. The public advisory only states that an app could bypass Gatekeeper, so do not infer a specific carrier format or exploitation chain from the CVE entry alone.<sup>[[13]](#references)</sup>
 
 ### [CVE-2024-27853]
 
-A Gatekeeper bypass in macOS 14.4 (released March 2024) stemming from `libarchive` handling of malicious ZIPs allowed apps to evade assessment. Update to 14.4 or later where Apple addressed the issue.
+A Gatekeeper bypass in macOS 14.4 (released March 2024) stemming from `libarchive` handling of malicious ZIPs allowed apps to evade assessment. Update to 14.4 or later where Apple addressed the issue.<sup>[[1]](#references)</sup>
 
 ### [CVE-2024-44128](https://support.apple.com/en-us/121234)
 
-An **Automator Quick Action workflow** embedded in a downloaded app could trigger without Gatekeeper assessment, because workflows were treated as data and executed by the Automator helper outside the normal notarization prompt path. A crafted `.app` bundling a Quick Action that runs a shell script (e.g., inside `Contents/PlugIns/*.workflow/Contents/document.wflow`) could therefore execute immediately on launch. Apple added an extra consent dialog and fixed the assessment path in Ventura **13.7**, Sonoma **14.7**, and Sequoia **15**.
+An **Automator Quick Action workflow** embedded in a downloaded app could trigger without Gatekeeper assessment, because workflows were treated as data and executed by the Automator helper outside the normal notarization prompt path. A crafted `.app` bundling a Quick Action that runs a shell script (e.g., inside `Contents/PlugIns/*.workflow/Contents/document.wflow`) could therefore execute immediately on launch. Apple added an extra consent dialog and fixed the assessment path in Ventura **13.7**, Sonoma **14.7**, and Sequoia **15**.<sup>[[3]](#references)</sup>
 
-### Third‑party unarchivers mis‑propagating quarantine (2023–2024)
+### Quarantine propagation failures at extraction and copy boundaries
 
-Several vulnerabilities in popular extraction tools (e.g., The Unarchiver) caused files extracted from archives to miss the `com.apple.quarantine` xattr, enabling Gatekeeper bypass opportunities. Always rely on macOS Archive Utility or patched tools when testing, and validate xattrs after extraction.
+A 2024 study found propagation gaps in the tested versions of iZip (ZIP/TAR/7Z), Archiver (ARCHIVER/ZIP/TAR/7Z), BetterZip (ZIP/TAR/7Z), WinRAR (ZIP/TAR/7Z), and 7z Utility (DMG/ZIP/7Z); it also observed the attribute being lost during VMware Tools host-to-guest copies. Several vendors subsequently announced fixes, so treat these names as leads for **version-specific retesting**, not as a permanent vulnerable-software list. The same trust-boundary problem applies to native Unix workflows: `curl`/`scp` do not add quarantine, and command-line `tar`/`unzip` do not automatically inherit it from a carrier archive.<sup>[[15]](#references)</sup>
+
+For offensive testing, compare the carrier and the final app after **every** browser, mail client, archive, disk-image, cloud-sync, shared-folder, and VM-copy transition. An explicit `spctl` rejection does not repair a missing xattr: without quarantine, the normal first-open Gatekeeper path might never request that assessment.<sup>[[15]](#references)</sup>
+
+```bash
+# 1. Confirm the browser-downloaded carrier is quarantined
+xattr -p com.apple.quarantine ./payload.zip
+
+# 2. Extract/copy it through the application under test, then inspect the result
+xattr -p com.apple.quarantine ./out/Payload.app || echo "QUARANTINE LOST"
+spctl --assess --type execute -vv ./out/Payload.app
+
+# 3. Enumerate every app bundle whose top-level directory lost the marker
+find ./out -type d -name '*.app' -prune -exec sh -c \
+  'for app do xattr -p com.apple.quarantine "$app" >/dev/null 2>&1 || echo "$app"; done' sh {} +
+```
 
 ### uchg (from this [talk](https://codeblue.jp/2023/result/pdf/cb23-bypassing-macos-security-and-privacy-mechanisms-from-gatekeeper-to-system-integrity-protection-by-koh-nakagawa.pdf))
 
@@ -554,18 +579,31 @@ Several vulnerabilities in popular extraction tools (e.g., The Unarchiver) cause
 - Compress the app to a tar.gz file.
 - Send the tar.gz file to a victim.
 - The victim opens the tar.gz file and runs the app.
-- Gatekeeper does not check the app.
+- Gatekeeper does not check the app.<sup>[[12]](#references)</sup>
 
 ### Prevent Quarantine xattr
 
 In an ".app" bundle if the quarantine xattr is not added to it, when executing it **Gatekeeper won't be triggered**.
 
+See [macOS FS Tricks](macos-fs-tricks/README.md#avoid-quarantine-xattrs-tricks) for filesystem-, flag-, ACL-, and AppleDouble-based primitives that can prevent or discard extended attributes.
+
+
 
 ## References
 
-- Apple Platform Security: About the security content of macOS Sonoma 14.4 (includes CVE-2024-27853) – [https://support.apple.com/en-us/HT214084](https://support.apple.com/en-us/HT214084)
-- Eclectic Light: How macOS now tracks the provenance of apps – [https://eclecticlight.co/2023/05/10/how-macos-now-tracks-the-provenance-of-apps/](https://eclecticlight.co/2023/05/10/how-macos-now-tracks-the-provenance-of-apps/)
-- Apple: About the security content of macOS Sonoma 14.7 / Ventura 13.7 (CVE-2024-44128) – [https://support.apple.com/en-us/121234](https://support.apple.com/en-us/121234)
-- MacRumors: macOS 15 Sequoia removes the Control‑click “Open” Gatekeeper bypass – [https://www.macrumors.com/2024/06/11/macos-sequoia-removes-open-anyway/](https://www.macrumors.com/2024/06/11/macos-sequoia-removes-open-anyway/)
-
+- [1] [Apple Platform Security: About the security content of macOS Sonoma 14.4 (includes CVE-2024-27853)](https://support.apple.com/en-us/HT214084)
+- [2] [Eclectic Light: How macOS now tracks the provenance of apps](https://eclecticlight.co/2023/05/10/how-macos-now-tracks-the-provenance-of-apps/)
+- [3] [Apple: About the security content of macOS Sonoma 14.7 / Ventura 13.7 (CVE-2024-44128)](https://support.apple.com/en-us/121234)
+- [4] [MacRumors: macOS 15 Sequoia removes the Control‑click “Open” Gatekeeper bypass](https://www.macrumors.com/2024/08/06/macos-sequoia-gatekeeper-security-change/)
+- [5] [WithSecure Labs: The Discovery of CVE-2021-1810](https://labs.withsecure.com/publications/the-discovery-of-cve-2021-1810)
+- [6] [CVE-2021-30990, Bypassing The macOS Gatekeeper](https://ronmasas.com/posts/bypass-macos-gatekeeper)
+- [7] [Jamf Threat Labs identifies Safari vulnerability allowing for Gatekeeper bypass](https://www.jamf.com/blog/jamf-threat-labs-safari-vuln-gatekeeper-bypass/)
+- [8] [Jamf Threat Labs identifies macOS Archive Utility vulnerability allowing for Gatekeeper bypass (CVE-2022-32910)](https://www.jamf.com/blog/jamf-threat-labs-macos-archive-utility-vulnerability/)
+- [9] [Gatekeeper's Achilles heel: Unearthing a macOS vulnerability](https://www.microsoft.com/en-us/security/blog/2022/12/19/gatekeepers-achilles-heel-unearthing-a-macos-vulnerability/)
+- [10] [F-Secure: Discovery of a Gatekeeper Bypass (CVE-2023-27943)](https://blog.f-secure.com/discovery-of-gatekeeper-bypass-cve-2023-27943/)
+- [11] [Finding and reporting a Gatekeeper bypass exploit with help from Mac Monitor](https://redcanary.com/blog/gatekeeper-bypass-vulnerabilities/)
+- [12] [CODE BLUE 2023: Bypassing macOS Security and Privacy Mechanisms — From Gatekeeper to System Integrity Protection (Koh Nakagawa)](https://codeblue.jp/2023/result/pdf/cb23-bypassing-macos-security-and-privacy-mechanisms-from-gatekeeper-to-system-integrity-protection-by-koh-nakagawa.pdf)
+- [13] [Apple: About the security content of macOS Sonoma 14 (CVE-2023-41067)](https://support.apple.com/en-us/HT213940)
+- [14] [Apple Developer Forums: Testing a notarised product](https://developer.apple.com/forums/thread/130560)
+- [15] [Unit 42: Gatekeeper Bypass — Uncovering Weaknesses in a macOS Security Mechanism](https://unit42.paloaltonetworks.com/gatekeeper-bypass-macos/)
 {{#include ../../../banners/hacktricks-training.md}}
