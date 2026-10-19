@@ -85,7 +85,7 @@ These installers have `preinstall` and `postinstall` bash scripts that malware a
 
 ### hdiutil
 
-This tool allows to **mount** Apple disk images (**.dmg**) files to inspect them before running anything:
+This tool **mounts** Apple disk image (`.dmg`) files so they can be inspected before anything is run:
 
 ```bash
 hdiutil attach ~/Downloads/Firefox\ 58.0.2.dmg
@@ -97,7 +97,7 @@ It will be mounted in `/Volumes`
 
 - Check for high entropy
 - Check the strings (is there is almost no understandable string, packed)
-- The UPX packer for MacOS generates a section called "\_\_XHDR"
+- The UPX packer for macOS generates a section called `__XHDR`.
 
 ## Static Objective-C analysis
 
@@ -199,7 +199,7 @@ LC 01: LC_SEGMENT_64              Mem: 0x100000000-0x100028000    __TEXT
     [...]
 ```
 
-You can find further information about the [**information stored in these section in this blog post**](https://knight.sc/reverse%20engineering/2019/07/17/swift-metadata.html).
+You can find further information about the [**information stored in these section in this blog post**](https://knight.sc/reverse%20engineering/2019/07/17/swift-metadata.html).<sup>[[5]](#references)</sup>
 
 Moreover, **Swift binaries might have symbols** (for example libraries need to store symbols so its functions can be called). The **symbols usually have the info about the function name** and attr in a ugly way, so they are very useful and there are "**demanglers"** that can get the original name:
 
@@ -214,7 +214,15 @@ swift demangle
 ## Dynamic Analysis
 
 > [!WARNING]
-> Note that in order to debug binaries, **SIP needs to be disabled** (`csrutil disable` or `csrutil enable --without debug`) or to copy the binaries to a temporary folder and **remove the signature** with `codesign --remove-signature <binary-path>` or allow the debugging of the binary (you can use [this script](https://gist.github.com/carlospolop/a66b8d72bb8f43913c4b5ae45672578b))
+> **Do not disable SIP as a default debugging step.** Development builds with `com.apple.security.get-task-allow` can be debugged with SIP enabled. Check the target with `codesign -d --entitlements :- /path/to/binary` before trying LLDB. A debugger entitlement alone does not grant access to SIP-protected targets.<sup>[[15]](#references)</sup>
+>
+> A distributed app with the hardened runtime usually omits `get-task-allow` and blocks attachment. Use a developer-supplied debug build if possible; re-signing a disposable copy can change the behavior under test. If a protected target requires SIP to be disabled, use a dedicated test machine or VM rather than a machine you rely on.<sup>[[16]](#references)</sup>
+>
+> Earlier guidance for a protected target in an isolated test environment listed these alternatives:
+>
+> Note that in order to debug binaries, SIP needs to be disabled (`csrutil disable` or `csrutil enable --without debug`) or to copy the binaries to a temporary folder and remove the signature with `codesign --remove-signature <binary-path>` or allow the debugging of the binary (you can use [this script](https://gist.github.com/carlospolop/a66b8d72bb8f43913c4b5ae45672578b))
+>
+> This is not a general SIP requirement: prefer a debug build, and note that copying or changing a signature may alter the behavior under test.
 
 > [!WARNING]
 > Note that in order to **instrument system binaries**, (such as `cloudconfigurationd`) on macOS, **SIP must be disabled** (just removing the signature won't work).
@@ -224,7 +232,7 @@ swift demangle
 macOS exposes some interesting APIs that give information about the processes:
 
 - `proc_info`: This is the main one giving a lot of information about each process. You need to be root to get other processes information but you don't need special entitlements or mach ports.
-- `libsysmon.dylib`: It allows to get information about processes via XPC exposed functions, however, it's needed to have the entitlement `com.apple.sysmond.client`.
+- `libsysmon.dylib`: Exposes process information through XPC functions, but callers need the `com.apple.sysmond.client` entitlement.
 
 ### Stackshot & microstackshots
 
@@ -244,9 +252,9 @@ Its plist is located in `/System/Library/LaunchDaemons/com.apple.sysdiagnose.pli
 
 ### Unified Logs
 
-MacOS generates a lot of logs that can be very useful when running an application trying to understand **what is it doing**.
+macOS generates extensive logs that are useful when analyzing an application's behavior.
 
-Moreover, the are some logs that will contain the tag `<private>` to **hide** some **user** or **computer** **identifiable** information. However, it's possible to **install a certificate to disclose this information**. Follow the explanations from [**here**](https://superuser.com/questions/1532031/how-to-show-private-data-in-macos-unified-log).
+Some log fields contain the tag `<private>` to hide user- or device-identifying information. Older instructions sometimes describe installing a certificate to reveal these fields; current debugging guidance instead uses an explicitly scoped configuration profile with `Enable-Private-Data`, or per-application `OSLogPreferences`, and behavior can vary by subsystem and macOS release. The older certificate/profile discussion is retained in the references. <sup>[[8]](#references)</sup><sup>[[9]](#references)</sup>
 
 ### Hopper
 
@@ -274,7 +282,7 @@ In the right panel you can see interesting information such as the **navigation 
 
 It allows users access to applications at an extremely **low level** and provides a way for users to **trace** **programs** and even change their execution flow. Dtrace uses **probes** which are **placed throughout the kernel** and are at locations such as the beginning and end of system calls.
 
-DTrace uses the **`dtrace_probe_create`** function to create a probe for each system call. These probes can be fired in the **entry and exit point of each system call**. The interaction with DTrace occur through /dev/dtrace which is only available for the root user.
+DTrace uses the **`dtrace_probe_create`** function to create a probe for each system call. These probes can be fired in the **entry and exit point of each system call**. The interaction with DTrace occur through /dev/dtrace which is only available for the root user.<sup>[[1]](#references)</sup>
 
 > [!TIP]
 > To enable Dtrace without fully disabling SIP protection you could execute on recovery mode: `csrutil enable --without dtrace`
@@ -416,7 +424,7 @@ You need to monitor your mac with a command like **`sudo eslogger fork exec rena
 
 ### FileMonitor
 
-[**FileMonitor**](https://objective-see.com/products/utilities.html#FileMonitor) allows to monitor file events (such as creation, modifications, and deletions) providing detailed information about such events.
+[**FileMonitor**](https://objective-see.com/products/utilities.html#FileMonitor) monitors file events such as creation, modification, and deletion.
 
 ### Crescendo
 
@@ -444,7 +452,48 @@ It also checks the binary processes against **virustotal** and show information 
 
 ## PT_DENY_ATTACH <a href="#page-title" id="page-title"></a>
 
-In [**this blog post**](https://knight.sc/debugging/2019/06/03/debugging-apple-binaries-that-use-pt-deny-attach.html) you can find an example about how to **debug a running daemon** that used **`PT_DENY_ATTACH`** to prevent debugging even if SIP was disabled.
+In [**this blog post**](https://knight.sc/debugging/2019/06/03/debugging-apple-binaries-that-use-pt-deny-attach.html) you can find an example about how to **debug a running daemon** that used **`PT_DENY_ATTACH`** to prevent debugging even if SIP was disabled.<sup>[[6]](#references)</sup>
+
+`PT_DENY_ATTACH` is a Darwin-specific `ptrace(2)` request with value **31** (`0x1f`); the other arguments are ignored. A process can invoke it directly, without a fork, to refuse later parent tracing.<sup>[[10]](#references)[[12]](#references)</sup>
+
+```c
+#include <sys/ptrace.h>
+
+if (ptrace(PT_DENY_ATTACH, 0, 0, 0) == -1) {
+    /* A debugger may already be present. */
+}
+```
+
+### XNU state and call ordering
+
+The result depends on which `ptrace` request reaches XNU first:<sup>[[11]](#references)[[12]](#references)</sup>
+
+- **LLDB attaches first:** `debugserver` uses `PT_ATTACHEXC`; XNU converts it to `PT_ATTACH`, performs `KAUTH_PROCESS_CANTRACE` authorization and sets `P_LTRACED` on the target. A subsequent `PT_DENY_ATTACH` sees that flag and terminates the target with `W_EXITCODE(ENOTSUP, 0)`, normally shown by LLDB as status **45** (`0x2d`).
+- **The target denies first:** XNU sets `P_LNOATTACH`. A later attach is rejected by process-tracing authorization; the attach error path sees `P_LNOATTACH` and sends `SIGSEGV` to the attaching process, which can appear in LLDB as a lost `debugserver` connection.
+
+To distinguish these paths, enable `debugserver` logging before launching or attaching and inspect its `ptrace` requests:<sup>[[12]](#references)</sup>
+
+```bash
+export LLDB_DEBUGSERVER_LOG_FILE=./debugserver.log
+lldb ./target                 # or: lldb -p <pid>
+grep ptrace ./debugserver.log
+```
+
+### ARM64 static identification and bypass
+
+For a non-obfuscated ARM64 Mach-O, locate the imported `_ptrace` stub and inspect the call sites. The first integer argument is passed in `w0`, so this sequence exposes the anti-debug request directly. Absence of the import is not conclusive because code can resolve `ptrace` dynamically. An imported `_sysctl` can also indicate anti-debug checks, though it too may be resolved dynamically.<sup>[[7]](#references)[[10]](#references)[[12]](#references)</sup>
+
+```armasm
+movz    w0, #0x1f            ; PT_DENY_ATTACH
+bl      imp___stubs__ptrace
+```
+
+In the demonstrated sample, patching the immediate from `0x1f` to `0x0` changes the request to `PT_TRACE_ME` and allows the program to continue under LLDB. This is a **sample-specific bypass**, not a general no-op: inspect the caller's return-value checks and control flow before choosing whether to change the request, skip the call, or force a successful return.<sup>[[10]](#references)[[12]](#references)</sup>
+
+```armasm
+movz    w0, #0x0             ; PT_TRACE_ME
+bl      imp___stubs__ptrace
+```
 
 ### lldb
 
@@ -466,7 +515,70 @@ settings set target.x86-disassembly-flavor intel
 > [!WARNING]
 > Inside lldb, dump a process with `process save-core`
 
-<table data-header-hidden><thead><tr><th width="225"></th><th></th></tr></thead><tbody><tr><td><strong>(lldb) Command</strong></td><td><strong>Description</strong></td></tr><tr><td><strong>run (r)</strong></td><td>Starting execution, which will continue unabated until a breakpoint is hit or the process terminates.</td></tr><tr><td><strong>process launch --stop-at-entry</strong></td><td>Strt execution stopping at the entry point</td></tr><tr><td><strong>continue (c)</strong></td><td>Continue execution of the debugged process.</td></tr><tr><td><strong>nexti (n / ni)</strong></td><td>Execute the next instruction. This command will skip over function calls.</td></tr><tr><td><strong>stepi (s / si)</strong></td><td>Execute the next instruction. Unlike the nexti command, this command will step into function calls.</td></tr><tr><td><strong>finish (f)</strong></td><td>Execute the rest of the instructions in the current function (“frame”) return and halt.</td></tr><tr><td><strong>control + c</strong></td><td>Pause execution. If the process has been run (r) or continued (c), this will cause the process to halt ...wherever it is currently executing.</td></tr><tr><td><strong>breakpoint (b)</strong></td><td><p><code>b main</code> #Any func called main</p><p><code>b <binname>`main</code> #Main func of the bin</p><p><code>b set -n main --shlib <lib_name></code> #Main func of the indicated bin</p><p><code>breakpoint set -r '\[NSFileManager .*\]$'</code> #Any NSFileManager method</p><p><code>breakpoint set -r '\[NSFileManager contentsOfDirectoryAtPath:.*\]$'</code></p><p><code>break set -r . -s libobjc.A.dylib</code> # Break in all functions of that library</p><p><code>b -a 0x0000000100004bd9</code></p><p><code>br l</code> #Breakpoint list</p><p><code>br e/dis <num></code> #Enable/Disable breakpoint</p><p>breakpoint delete <num></p></td></tr><tr><td><strong>help</strong></td><td><p>help breakpoint #Get help of breakpoint command</p><p>help memory write #Get help to write into the memory</p></td></tr><tr><td><strong>reg</strong></td><td><p>reg read</p><p>reg read $rax</p><p>reg read $rax --format <<a href="https://lldb.llvm.org/use/variable.html#type-format">format</a>></p><p>reg write $rip 0x100035cc0</p></td></tr><tr><td><strong>x/s <reg/memory address></strong></td><td>Display the memory as a null-terminated string.</td></tr><tr><td><strong>x/i <reg/memory address></strong></td><td>Display the memory as assembly instruction.</td></tr><tr><td><strong>x/b <reg/memory address></strong></td><td>Display the memory as byte.</td></tr><tr><td><strong>print object (po)</strong></td><td><p>This will print the object referenced by the param</p><p>po $raw</p><p><code>{</code></p><p><code>dnsChanger = {</code></p><p><code>"affiliate" = "";</code></p><p><code>"blacklist_dns" = ();</code></p><p>Note that most of Apple’s Objective-C APIs or methods return objects, and thus should be displayed via the “print object” (po) command. If po doesn't produce a meaningful output use <code>x/b</code></p></td></tr><tr><td><strong>memory</strong></td><td>memory read 0x000....<br>memory read $x0+0xf2a<br>memory write 0x100600000 -s 4 0x41414141 #Write AAAA in that address<br>memory write -f s $rip+0x11f+7 "AAAA" #Write AAAA in the addr</td></tr><tr><td><strong>disassembly</strong></td><td><p>dis #Disas current function</p><p>dis -n <funcname> #Disas func</p><p>dis -n <funcname> -b <basename> #Disas func<br>dis -c 6 #Disas 6 lines<br>dis -c 0x100003764 -e 0x100003768 # From one add until the other<br>dis -p -c 4 # Start in current address disassembling</p></td></tr><tr><td><strong>parray</strong></td><td>parray 3 (char **)$x1 # Check array of 3 components in x1 reg</td></tr><tr><td><strong>image dump sections</strong></td><td>Print map of the current process memory</td></tr><tr><td><strong>image dump symtab <library></strong></td><td><code>image dump symtab CoreNLP</code> #Get the address of all the symbols from CoreNLP</td></tr></tbody></table>
+<table data-header-hidden>
+<thead><tr><th width="225"></th><th></th></tr></thead>
+<tbody>
+<tr><td><strong>(lldb) Command</strong></td><td><strong>Description</strong></td></tr>
+<tr><td><strong>run (r)</strong></td><td>Start execution, which will continue until a breakpoint is hit or the process terminates.</td></tr>
+<tr><td><strong>process launch --stop-at-entry</strong></td><td>Start execution and stop at the entry point.</td></tr>
+<tr><td><strong>continue (c)</strong></td><td>Continue execution of the debugged process.</td></tr>
+<tr><td><strong>nexti (n / ni)</strong></td><td>Execute the next instruction. This command skips over function calls.</td></tr>
+<tr><td><strong>stepi (s / si)</strong></td><td>Execute the next instruction. Unlike the <code>nexti</code> command, this command steps into function calls.</td></tr>
+<tr><td><strong>finish (f)</strong></td><td>Execute the remaining instructions in the current function (frame), return, and halt.</td></tr>
+<tr><td><strong>control + c</strong></td><td>Pause execution. If the process has been run (<code>r</code>) or continued (<code>c</code>), this causes it to halt wherever it is currently executing.</td></tr>
+<tr><td><strong>breakpoint (b)</strong></td><td>
+<p><code>b main</code> # Any function called main</p>
+<p><code>b &lt;binname&gt;`main</code> # Main function of the binary</p>
+<p><code>b set -n main --shlib &lt;lib_name&gt;</code> # Main function of the indicated binary</p>
+<p><code>breakpoint set -r '\[NSFileManager .*\]$'</code> # Any NSFileManager method</p>
+<p><code>breakpoint set -r '\[NSFileManager contentsOfDirectoryAtPath:.*\]$'</code></p>
+<p><code>break set -r . -s libobjc.A.dylib</code> # Break in all functions of that library</p>
+<p><code>b -a 0x0000000100004bd9</code></p>
+<p><code>br l</code> # Breakpoint list</p>
+<p><code>br e/dis &lt;num&gt;</code> # Enable/disable breakpoint</p>
+<p><code>breakpoint delete &lt;num&gt;</code></p>
+</td></tr>
+<tr><td><strong>help</strong></td><td>
+<p><code>help breakpoint</code> # Get help for the breakpoint command</p>
+<p><code>help memory write</code> # Get help for writing to memory</p>
+</td></tr>
+<tr><td><strong>reg</strong></td><td>
+<p><code>reg read</code></p>
+<p><code>reg read $rax</code></p>
+<p><code>reg read $rax --format &lt;<a href="https://lldb.llvm.org/use/variable.html#type-format">format</a>&gt;</code></p>
+<p><code>reg write $rip 0x100035cc0</code></p>
+</td></tr>
+<tr><td><strong>x/s &lt;register/memory address&gt;</strong></td><td>Display memory as a null-terminated string.</td></tr>
+<tr><td><strong>x/i &lt;register/memory address&gt;</strong></td><td>Display memory as an assembly instruction.</td></tr>
+<tr><td><strong>x/b &lt;register/memory address&gt;</strong></td><td>Display memory as a byte.</td></tr>
+<tr><td><strong>print object (po)</strong></td><td>
+<p>This prints the object referenced by the parameter.</p>
+<p><code>po $raw</code></p>
+<p><code>{</code></p>
+<p><code>dnsChanger = {</code></p>
+<p><code>"affiliate" = "";</code></p>
+<p><code>"blacklist_dns" = ();</code></p>
+<p>Most Apple Objective-C APIs or methods return objects and should therefore be displayed with the “print object” (<code>po</code>) command. If <code>po</code> does not produce meaningful output, use <code>x/b</code>.</p>
+</td></tr>
+<tr><td><strong>memory</strong></td><td>
+<code>memory read 0x000....</code><br>
+<code>memory read $x0+0xf2a</code><br>
+<code>memory write 0x100600000 -s 4 0x41414141</code> # Write AAAA at that address<br>
+<code>memory write -f s $rip+0x11f+7 "AAAA"</code> # Write AAAA at the address
+</td></tr>
+<tr><td><strong>disassembly</strong></td><td>
+<p><code>dis</code> # Disassemble the current function</p>
+<p><code>dis -n &lt;funcname&gt;</code> # Disassemble a function</p>
+<p><code>dis -n &lt;funcname&gt; -b &lt;basename&gt;</code> # Disassemble a function<br>
+<code>dis -c 6</code> # Disassemble six lines<br>
+<code>dis -c 0x100003764 -e 0x100003768</code> # Disassemble from one address to the other<br>
+<code>dis -p -c 4</code> # Start disassembling at the current address</p>
+</td></tr>
+<tr><td><strong>parray</strong></td><td><code>parray 3 (char **)$x1</code> # Inspect an array of three components in the <code>x1</code> register</td></tr>
+<tr><td><strong>image dump sections</strong></td><td>Print a map of the current process memory.</td></tr>
+<tr><td><strong>image dump symtab &lt;library&gt;</strong></td><td><code>image dump symtab CoreNLP</code> # Get the address of every symbol from CoreNLP</td></tr>
+</tbody>
+</table>
 
 > [!TIP]
 > When calling the **`objc_sendMsg`** function, the **rsi** register holds the **name of the method** as a null-terminated (“C”) string. To print the name via lldb do:
@@ -482,15 +594,34 @@ settings set target.x86-disassembly-flavor intel
 
 #### VM detection
 
-- The command **`sysctl hw.model`** returns "Mac" when the **host is a MacOS** but something different when it's a VM.
-- Playing with the values of **`hw.logicalcpu`** and **`hw.physicalcpu`** some malwares try to detect if it's a VM.
+- The command **`sysctl hw.model`** normally returns a Mac model identifier on physical hardware and may return a different value in a VM.<sup>[[3]](#references)</sup>
+- Playing with the values of **`hw.logicalcpu`** and **`hw.physicalcpu`** some malwares try to detect if it's a VM.<sup>[[4]](#references)</sup>
+- A loader may also query `kern.hv_vmm_present` and `machdep.cpu.brand_string` through `sysctl` when checking for a VM before unpacking its next stage. These checks complement, rather than replace, the debugger-attachment check described below.<sup>[[20]](#references)</sup>
 - Some malwares can also **detect** if the machine is **VMware** based on the MAC address (00:50:56).
 - It's also possible to find **if a process is being debugged** with a simple code such us:
   - `if(P_TRACED == (info.kp_proc.p_flag & P_TRACED)){ //process being debugged }`
-- It can also invoke the **`ptrace`** system call with the **`PT_DENY_ATTACH`** flag. This **prevents** a deb**u**gger from attaching and tracing.
+- It can also invoke the `ptrace` system call with the `PT_DENY_ATTACH` flag. This prevents a debugger from attaching and tracing. Check the [PT_DENY_ATTACH section](#page-title) for its order-dependent XNU behavior, `debugserver` logging and ARM64 patching workflow.<sup>[[7]](#references)[[12]](#references)</sup>
+- It can also invoke the **`ptrace`** system call with the **`PT_DENY_ATTACH`** flag. Check the [PT_DENY_ATTACH section](#page-title) for its order-dependent XNU behavior, `debugserver` logging and ARM64 patching workflow.<sup>[[7]](#references)[[12]](#references)</sup>
   - You can check if the **`sysctl`** or **`ptrace`** function is being **imported** (but the malware could import it dynamically)
-  - As noted in this writeup, “[Defeating Anti-Debug Techniques: macOS ptrace variants](https://alexomara.com/blog/defeating-anti-debug-techniques-macos-ptrace-variants/)” :\
+  - As noted in this writeup, “[Defeating Anti-Debug Techniques: macOS ptrace variants](https://alexomara.com/blog/defeating-anti-debug-techniques-macos-ptrace-variants/)” :<sup>[[7]](#references)</sup>\
     “_The message Process # exited with **status = 45 (0x0000002d)** is usually a tell-tale sign that the debug target is using **PT_DENY_ATTACH**_”
+#### `fork()` process handoff
+
+A process can evade a debugger that remains attached to the original PID by calling `fork()` near startup, terminating the parent (`fork()` returns a positive child PID) and continuing the protected logic only in the child (`fork()` returns `0`). Resolving `fork` with `dlsym(RTLD_DEFAULT, "fork")` also removes the direct `_fork` call site, but this is only an anti-analysis obstacle: the symbol-name string and the dynamic-resolution data flow remain visible in the Mach-O binary.<sup>[[13]](#references)[[14]](#references)</sup>
+
+On arm64, detect this pattern by following data flow rather than fixed addresses: the first two arguments to `dlsym` are passed in `x0` and `x1`, `RTLD_DEFAULT` may appear as `-2` (for example, `movn x0, #1`), and an `adrp`/`add` pair commonly constructs the address of the `"fork"` string. After the `bl` to the `dlsym` stub, trace the returned pointer from `x0` through its null check and storage to a later indirect `blr`. Then follow the `fork()` result in `w0`: zero selects the child continuation while positive and `-1` values select the parent/error path.<sup>[[13]](#references)[[14]](#references)</sup>
+
+A static bypass is to suppress the indirect call and force the existing result check to take the child path. For example, if the compiler generated the sequence shown below, patch the `blr` and result store to `nop`, provide a synthetic zero result, and retain the comparison/branch logic. The application then continues under the original PID without creating a child; instruction registers and branch targets must be adapted to the analyzed build.<sup>[[13]](#references)[[14]](#references)</sup>
+
+```armasm
+ldr  x8, [sp, #0x10]
+nop                              ; patched blr x8
+nop                              ; patched str w0, [sp, #0xc]
+mov  w8, #0                      ; patched ldr w8, [sp, #0xc]
+subs w8, w8, #0
+cset w8, eq
+tbnz w8, #0, child_continuation
+```
 
 ## Core Dumps
 
@@ -524,7 +655,7 @@ sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.ReportCrash.Root.
 
 ### Sleep
 
-While fuzzing in a MacOS it's important to not allow the Mac to sleep:
+While fuzzing on macOS, prevent the Mac from sleeping:
 
 - systemsetup -setsleep Never
 - pmset, System Preferences
@@ -573,6 +704,16 @@ Or use `netstat` or `lsof`
 lldb -o "target create `which some-binary`" -o "settings set target.env-vars DYLD_INSERT_LIBRARIES=/usr/lib/libgmalloc.dylib" -o "run arg1 arg2" -o "bt" -o "reg read" -o "dis -s \$pc-32 -c 24 -m -F intel" -o "quit"
 ```
 
+### Stateful Mach IPC fuzzing
+
+Mach services exposed by privileged daemons are useful fuzz targets when an unprivileged or sandboxed client can obtain a send right. Start from the daemon's `MachServices` launchd entry and use the [MIG analysis workflow](../macos-proces-abuse/macos-ipc-inter-process-communication/macos-mig-mach-interface-generator.md) to map message IDs to handlers. Before mutating bytes, break on the MIG server routine while a normal client exercises the service, and save valid request messages as seed inputs. Preserve required header fields, message sizes and descriptor layout so mutations reach the handler rather than failing immediately in dispatch.<sup>[[17]](#references)</sup>
+
+Many handlers depend on prior calls. Have the harness initialize the service state, then consume each fuzz input as a sequence of **operations plus arguments**: send setup requests (such as open or create), retain returned identifiers, and use them in later requests. This lets coverage feedback explore state transitions instead of repeatedly hitting an uninitialized-object check.<sup>[[17]](#references)</sup>
+
+For a closed-source target, an in-process harness that calls the MIG dispatch routine can be instrumented with Jackalope/TinyInst. The [CoreAudioFuzz harness](https://github.com/googleprojectzero/p0tools/tree/master/CoreAudioFuzz) is a concrete implementation, not a drop-in harness for other services.<sup>[[17]](#references)[[18]](#references)[[19]](#references)</sup>
+
+**Validate every crash through the real IPC path.** A direct-dispatch harness skips kernel validation of Mach messages and can produce false positives, especially when it supplies invalid out-of-line (OOL) memory or port descriptors. Allocate valid OOL backing memory in the harness, then replay the reduced testcase through `mach_msg` from a client with the original service access and verify that the daemon still crashes.<sup>[[17]](#references)</sup>
+
 ### Fuzzers
 
 #### [AFL++](https://github.com/AFLplusplus/AFLplusplus)
@@ -581,7 +722,7 @@ Works for CLI tools
 
 #### [Litefuzz](https://github.com/sec-tools/litefuzz)
 
-It "**just works"** with macOS GUI tools. Note some some macOS apps have some specific requirements like unique filenames, the right extension, need to read the files from the sandbox (`~/Library/Containers/com.apple.Safari/Data`)...
+It "**just works**" with many macOS GUI tools. Some applications have additional requirements, such as unique filenames, a particular extension, or reading files from their sandbox container (`~/Library/Containers/com.apple.Safari/Data`).
 
 Some examples:
 
@@ -609,20 +750,34 @@ litefuzz -lk -c "smbutil view smb://localhost:4455" -a tcp://localhost:4455 -i i
 litefuzz -s -a tcp://localhost:5900 -i input/screenshared-session --reportcrash screensharingd -p -n 100000
 ```
 
-### More Fuzzing MacOS Info
+### More macOS Fuzzing Information
 
-- [https://www.youtube.com/watch?v=T5xfL9tEg44](https://www.youtube.com/watch?v=T5xfL9tEg44)
+- [https://www.youtube.com/watch?v=T5xfL9tEg44](https://www.youtube.com/watch?v=T5xfL9tEg44) <sup>[[2]](#references)</sup>
 - [https://github.com/bnagy/slides/blob/master/OSXScale.pdf](https://github.com/bnagy/slides/blob/master/OSXScale.pdf)
 - [https://github.com/bnagy/francis/tree/master/exploitaben](https://github.com/bnagy/francis/tree/master/exploitaben)
 - [https://github.com/ant4g0nist/crashwrangler](https://github.com/ant4g0nist/crashwrangler)
 
 ## References
 
-- [**OS X Incident Response: Scripting and Analysis**](https://www.amazon.com/OS-Incident-Response-Scripting-Analysis-ebook/dp/B01FHOHHVS)
-- [**https://www.youtube.com/watch?v=T5xfL9tEg44**](https://www.youtube.com/watch?v=T5xfL9tEg44)
-- [**https://taomm.org/vol1/analysis.html**](https://taomm.org/vol1/analysis.html)
-- [**The Art of Mac Malware: The Guide to Analyzing Malicious Software**](https://taomm.org/)
+- [1] [OS X Incident Response: Scripting and Analysis](https://www.amazon.com/OS-Incident-Response-Scripting-Analysis-ebook/dp/B01FHOHHVS)
+- [2] [Jeremy Brown - Summer of Fuzz: MacOS - DEF CON 29 AppSec Village](https://www.youtube.com/watch?v=T5xfL9tEg44)
+- [3] [The Art of Mac Malware, Volume I: Analysis](https://taomm.org/)
+- [4] [No Starch Press - The Art of Mac Malware: The Guide to Analyzing Malicious Software](https://nostarch.com/art-mac-malware)
+- [5] [knight.sc - information stored in these section in this blog post](https://knight.sc/reverse%20engineering/2019/07/17/swift-metadata.html)
+- [6] [knight.sc - Debugging Apple Binaries That Use Pt Deny Attach](https://knight.sc/debugging/2019/06/03/debugging-apple-binaries-that-use-pt-deny-attach.html)
+- [7] [alexomara.com - Defeating Anti-Debug Techniques: macOS ptrace variants](https://alexomara.com/blog/defeating-anti-debug-techniques-macos-ptrace-variants)
+- [8] [Apple Developer Forums - Xcode structured logs and `Enable-Private-Data`](https://developer.apple.com/forums/thread/738648)
+- [9] [Super User - Showing private data in the macOS unified log](https://superuser.com/questions/1532031/how-to-show-private-data-in-macos-unified-log)
+- [10] [Apple XNU `ptrace.h` request definitions](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/ptrace.h)
+- [11] [Apple XNU `ptrace` implementation in `mach_process.c`](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/mach_process.c)
+- [12] [Reverse Society - ptrace internals: How it prevents debugger attachment](https://blog.reversesociety.co/blog/2024/anti-debugging-using-ptrace)
+- [13] [tony-go/antidebug-examples - fork examples](https://github.com/tony-go/antidebug-examples/tree/main/fork)
+- [14] [Reverse Society - Anti-debugging technique using dlsym and fork](https://blog.reversesociety.co/blog/2024/anti-debugging-detection-with-fork)
+- [15] [Apple - Debugging tool entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.cs.debugger)
+- [16] [Apple Developer Forums - Debugging a hardened third-party app](https://developer.apple.com/forums/thread/776503)
+- [17] [Project Zero - Breaking the Sound Barrier Part I: Fuzzing CoreAudio with Mach Messages](https://projectzero.google/2025/05/breaking-sound-barrier-part-i-fuzzing.html)
+- [18] [Project Zero - CoreAudioFuzz harness](https://github.com/googleprojectzero/p0tools/tree/master/CoreAudioFuzz)
+- [19] [Project Zero - Jackalope fuzzer](https://github.com/googleprojectzero/Jackalope)
+- [20] [Kaspersky Securelist - A new version of the MacSync macOS stealer targets crypto enthusiasts and developers](https://securelist.com/macsync-new-version/121383/)
 
 {{#include ../../../banners/hacktricks-training.md}}
-
-

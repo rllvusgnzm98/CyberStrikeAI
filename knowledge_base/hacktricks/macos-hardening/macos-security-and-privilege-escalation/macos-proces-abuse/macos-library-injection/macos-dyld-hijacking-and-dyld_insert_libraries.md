@@ -75,7 +75,7 @@ otool -l "/Applications/VulnDyld.app/Contents/Resources/lib/binary" | grep LC_RP
 {{#tab name="@rpath"}}
 
 ```bash
-# Check librareis loaded using @rapth and the used versions
+# Check libraries loaded using @rpath and the versions used
 otool -l "/Applications/VulnDyld.app/Contents/Resources/lib/binary" | grep "@rpath" -A 3
          name @rpath/lib.dylib (offset 24)
    time stamp 2 Thu Jan  1 01:00:02 1970
@@ -153,7 +153,7 @@ And **execute** the binary and check the **library was loaded**:
 </code></pre>
 
 > [!TIP]
-> A nice writeup about how to abuse this vulnerability to abuse the camera permissions of telegram can be found in [https://danrevah.github.io/2023/05/15/CVE-2023-26818-Bypass-TCC-with-Telegram/](https://danrevah.github.io/2023/05/15/CVE-2023-26818-Bypass-TCC-with-Telegram/)
+> A nice writeup about how to abuse this vulnerability to abuse the camera permissions of telegram can be found in [https://danrevah.github.io/2023/05/15/CVE-2023-26818-Bypass-TCC-with-Telegram/](https://danrevah.github.io/2023/05/15/CVE-2023-26818-Bypass-TCC-with-Telegram/) <sup>[[1]](#references)</sup>
 
 ## Bigger Scale
 
@@ -163,7 +163,8 @@ If you are planing on trying to inject libraries in unexpected binaries you coul
 sudo log stream --style syslog --predicate 'eventMessage CONTAINS[c] "[+] dylib"'
 ```
 
+## References
+
+- [1] [CVE-2023-26818 - Bypassing TCC with Telegram in macOS](https://danrevah.github.io/2023/05/15/CVE-2023-26818-Bypass-TCC-with-Telegram/)
+
 {{#include ../../../../banners/hacktricks-training.md}}
-
-
-
