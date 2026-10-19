@@ -35,15 +35,31 @@ In the following page you will find the basics of each component to build a basi
 AI-llm-architecture/README.md
 {{#endref}}
 
+## Model tools and platforms
+
+For running, fine-tuning, serving, or trying models, use the [AI model tools and platforms guide](AI-Model-Tools-and-Platforms.md).
+
 ## AI Security
+
+### AI Agent Security Methodology
+
+{{#ref}}
+AI-Agent-Security-Methodology.md
+{{#endref}}
 
 ### AI Risk Frameworks
 
-At this moment, the main 2 frameworks to assess the risks of AI systems are the OWASP ML Top 10 and the Google SAIF:
+Two useful starting frameworks for assessing AI-system risk are the OWASP Machine Learning Security Top 10 and Google's Secure AI Framework (SAIF). They are complementary rather than an exhaustive list of AI risk frameworks.<sup>[[1]](#references)[[2]](#references)</sup>
 
 
 {{#ref}}
 AI-Risk-Frameworks.md
+{{#endref}}
+
+### Mechanistic-Interpretability-Guided Adversarial Attacks
+
+{{#ref}}
+AI-Mechanistic-Interpretability-Adversarial-Attacks.md
 {{#endref}}
 
 ### AI Prompts Security
@@ -64,14 +80,23 @@ It's very common to developers and companies to run models downloaded from the I
 AI-Models-RCE.md
 {{#endref}}
 
+### AI-Assisted KYC Bypass
+
+Generative video can be combined with virtual-camera injection and camera API manipulation to bypass weak KYC, age-verification, and biometric liveness workflows:
+
+
+{{#ref}}
+KYC-Bypass-Using-AI.md
+{{#endref}}
+
 ### AI Model Context Protocol
 
-MCP (Model Context Protocol) is a protocol that allows AI agent clients to connect with external tools and data sources in a plug-and-play fashion. This enables complex workflows and interactions between AI models and external systems:
+MCP (Model Context Protocol) is an open protocol for connecting AI applications to tools and data sources. Because MCP servers can expose data and actions, assessments must include authorization, consent, tool-input validation, and trust-boundary review.<sup>[[3]](#references)</sup>
 
 
 {{#ref}}
 AI-MCP-Servers.md
-{{#endref}} 
+{{#endref}}
 
 ### AI-Assisted Fuzzing & Automated Vulnerability Discovery
 
@@ -79,5 +104,32 @@ AI-MCP-Servers.md
 {{#ref}}
 AI-Assisted-Fuzzing-and-Vulnerability-Discovery.md
 {{#endref}}
+
+### AI-Assisted Source Review and Vulnerability Validation
+
+For source/sink review, mobile entry-point taskflows, kernel pattern audits, and evidence-gated validation:
+
+{{#ref}}
+AI-Assisted-Source-Review-and-Vulnerability-Validation.md
+{{#endref}}
+
+### AI-Assisted Reverse Engineering
+
+[Partial lifting, invariant MBA detection, environment-bound decoding, and automated-extractor validation](../reversing/reversing-tools-basic-methods/README.md#bypass-flattened-control-flow-with-a-narrow-execution-slice)
+
+### Web Black-Box AI Pentester Bots
+
+LLM-powered agents can automate long-running black-box web pentesting workflows when they are supported by observability, orchestration, authenticated session handling, and adversarial validation:
+
+
+{{#ref}}
+Web-Black-Box-AI-Pentester-Bots.md
+{{#endref}}
+
+## References
+
+- [1] [OWASP Machine Learning Security Top 10](https://owasp.org/www-project-machine-learning-security-top-10/)
+- [2] [Google — Secure AI Framework (SAIF)](https://saif.google/)
+- [3] [Model Context Protocol — Introduction](https://modelcontextprotocol.io/docs/getting-started/intro)
 
 {{#include ../banners/hacktricks-training.md}}
