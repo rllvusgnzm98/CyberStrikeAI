@@ -2,10 +2,19 @@
 
 {{#include ../../banners/hacktricks-training.md}}
 
+{{#ref}}
+../../generic-methodologies-and-resources/pentesting-network/dds-rtps-security.md
+{{#endref}}
+
 ## **Introduction**
 
 ### Related resources
 
+For acquisition from exposed hardware interfaces, see [UART console-assisted firmware dumping](../hardware-hacking/uart.md#dumping-firmware-with-uart-console) and [SPI flash dumping](../hardware-hacking/spi.md#dumping-firmware-from-eeproms). For a repeatable boot-time UART capture before console access, see [SCPI-controlled power and oscilloscope acquisition](../hardware-hacking/uart.md#automating-boot-time-uart-capture-with-scpi).
+
+{{#ref}}
+uefi-ifr-nvram-security-setting-patching.md
+{{#endref}}
 
 {{#ref}}
 synology-encrypted-archive-decryption.md
@@ -23,7 +32,7 @@ android-mediatek-secure-boot-bl2_ext-bypass-el3.md
 mediatek-xflash-carbonara-da2-hash-bypass.md
 {{#endref}}
 
-Firmware is essential software that enables devices to operate correctly by managing and facilitating communication between the hardware components and the software that users interact with. It's stored in permanent memory, ensuring the device can access vital instructions from the moment it's powered on, leading to the operating system's launch. Examining and potentially modifying firmware is a critical step in identifying security vulnerabilities.
+Firmware is essential software that enables devices to operate correctly by managing and facilitating communication between the hardware components and the software that users interact with. It's stored in permanent memory, ensuring the device can access vital instructions from the moment it's powered on, leading to the operating system's launch. Examining and potentially modifying firmware is a critical step in identifying security vulnerabilities.<sup>[[2]](#references)[[3]](#references)</sup>
 
 ## **Gathering Information**
 
@@ -50,7 +59,7 @@ Obtaining firmware can be approached through various means, each with its own le
 - Utilizing **Google dork** queries for finding hosted firmware files
 - Accessing **cloud storage** directly, with tools like [S3Scanner](https://github.com/sa7mon/S3Scanner)
 - Intercepting **updates** via man-in-the-middle techniques
-- **Extracting** from the device through connections like **UART**, **JTAG**, or **PICit**
+- **Extracting** from the device through connections like **UART**, [**JTAG**](../hardware-hacking/jtag.md#halting-the-cpu-and-dumping-memoryflash), or **PICit**
 - **Sniffing** for update requests within device communication
 - Identifying and using **hardcoded update endpoints**
 - **Dumping** from the bootloader or network
@@ -58,7 +67,7 @@ Obtaining firmware can be approached through various means, each with its own le
 
 ### UART-only logs: force a root shell via U-Boot env in flash
 
-If UART RX is ignored (logs only), you can still force an init shell by **editing the U-Boot environment blob** offline:
+If UART RX is ignored (logs only), you can still force an init shell by **editing the U-Boot environment blob** offline:<sup>[[6]](#references)</sup>
 
 1. Dump SPI flash with a SOIC-8 clip + programmer (3.3V):
    ```bash
@@ -92,6 +101,57 @@ Moreover, you can use these tools to extract **files embedded inside the firmwar
 {{#endref}}
 
 Or [**binvis.io**](https://binvis.io/#/) ([code](https://code.google.com/archive/p/binvis/)) to inspect the file.
+
+### Raw display assets in external flash
+
+An external SPI dump is not necessarily the MCU's executable firmware. For a Cortex-M target, compare the start of each candidate code region with the device memory map: a normal vector table begins with a plausible SRAM stack pointer and reset-handler address in executable memory. A missing vector table at offset zero alone does not prove the entire chip has no code; inspect other offsets and the boot arrangement. If `binwalk` finds no container, inspect raw bytes and correlate flash read addresses from a [decoded SPI capture](../hardware-hacking/spi.md#reconstructing-spi-flash-reads-with-a-logic-analyzer) with actions that load new screens.<sup>[[14]](#references)</sup>
+
+For a display-asset region, try candidate pixel formats and dimensions instead of assuming PNG/JPEG. The cited device used **80×160 RGB565 little-endian** frames: at two bytes per pixel, a frame is **25,600 bytes** (25 KiB), not 24 kilobits. A decoded flash-read address identified the screen asset's offset; the researcher converted a prepared image with `ffmpeg -i bubo.jpg -pix_fmt rgb565le test.rgb`, replaced the equally sized asset in the original dump, wrote it with `flashrom -p linux_spi:dev=/dev/spidev0.0 -w flashme.bin`, and confirmed the new image on the display. This demonstrates writable *external display assets*, not extraction or reflashing of the MCU's internal firmware. Keep the original dump and verify dimensions, byte order, offset, and replacement length before any write.<sup>[[14]](#references)</sup>
+
+### Differential flash analysis and recoverable XOR secret stores
+
+When a firmware setting has no documented storage format, first take several matching flash reads, change **exactly one** setting, dump the complete chip again, and compare offsets. Repeating the experiment with controlled values distinguishes the setting from counters and write metadata; changes at new offsets rather than in place indicate an append-only or log-structured store. Keep deleted/tombstoned entries because their payload bytes may remain recoverable.<sup>[[12]](#references)[[13]](#references)</sup>
+
+```bash
+sha256sum baseline-1.bin baseline-2.bin baseline-3.bin
+cmp -l baseline-1.bin changed.bin
+```
+
+After locating the region, extract the firmware modules with tools such as `binwalk` and reverse the writer/validator in Ghidra. Confirm field boundaries, padding, key indexing, and key derivation in code instead of inferring the scheme only from ciphertext patterns.<sup>[[12]](#references)</sup>
+
+#### Recover keys from encrypted zero padding
+
+As described in [XOR-based encryption](../../crypto/symmetric/#xor-based-encryption), known plaintext reveals keystream bytes at the same offsets. A fixed-size field is especially exposed when its zero padding spans every index of a repeating XOR key: the encrypted padding reveals those key bytes directly because `0x00 XOR key_byte = key_byte`. If every key index is covered, reconstruct the key from the ciphertext tail and decrypt the populated bytes.<sup>[[12]](#references)</sup>
+
+Dell's vulnerable DVAR BIOS-password format is a concrete example: byte `0` of a 32-byte field is plaintext, while bytes `1..31` use a repeating 20-byte key.<sup>[[12]](#references)</sup>
+
+```text
+stored[0] = password[0]
+stored[i] = password[i] XOR key[(i - 1) mod 20]  # i = 1..31
+```
+
+For a password length `L`, positions `L..31` were zero before XOR. When `L <= 12`, those positions cover every key index, so the complete key and password are recovered without brute force:<sup>[[12]](#references)</sup>
+
+```text
+key[(i - 1) mod 20] = stored[i]                  # padding positions
+password[i] = stored[i] XOR key[(i - 1) mod 20] # populated positions
+```
+
+#### Lift keys from historical records
+
+Do not analyze each record independently. The DVAR key is derived approximately as `modified_md5(device_seed || variable_GUID || password[0])`: the device seed and GUID are fixed, and the only password-dependent input is the clear first byte. This gives at most 256 keys per device and makes records beginning with the same byte share a key. Group active and deleted records by that byte; a short historical record can leak the full key through padding and decrypt a current longer record whose own padding is insufficient. Password rotation can therefore increase exposure when old ciphertext is tombstoned rather than erased.<sup>[[12]](#references)</sup>
+
+The [`dellpwn`](https://github.com/R3n5k1/dellpwn) tool locates DVAR, validates candidate records, recovers passwords, and can display raw stored/key bytes. Build it from a checkout and scan a verified flash image as follows:<sup>[[13]](#references)</sup>
+
+```bash
+cargo install --path .
+dellpwn scan dump.bin --raw
+dellpwn scan dump.bin --partial  # include uncertain recoveries
+```
+
+For custom parsers, reject false positives with record structure, printable-character constraints, zero-padding checks, key entropy, and consistency where the key wraps. If repeated dumps show sparse per-write bit flips, enumerate the observed masks and rank corrections with these constraints, but report ambiguous characters instead of presenting heuristic output as exact recovery.<sup>[[12]](#references)</sup>
+
+Password verifiers should store a salted, iterated one-way hash rather than reversible ciphertext, and log-structured stores should securely remove superseded secret material.<sup>[[12]](#references)</sup>
 
 ### Getting the Filesystem
 
@@ -150,6 +210,67 @@ Files will be in "`squashfs-root`" directory afterwards.
 
 `$ ubidump.py <bin>`
 
+### Reconstructing split embedded root filesystems
+
+If a raw eMMC/SSD dump contains a valid filesystem header but its metadata offsets extend beyond the nominal partition, do not immediately classify it as corrupt. Embedded boot code can assemble the real root device from multiple physical ranges with Device Mapper, so carving one GPT partition produces only the first segment.<sup>[[9]](#references)</sup>
+
+#### Triage the complete media image
+
+First verify that acquisition has finished, the size is stable, and no writer still holds the image. If the filename encodes a start/end address, compare that range with the actual byte count. Recover the GPT in read-only mode and attach only the required range; do **not** run `vgchange -ay` against an untrusted physical volume on the workstation because volume-group collisions and unintended writes are possible.<sup>[[9]](#references)</sup>
+
+```bash
+stat -c '%s bytes' firmware.bin
+lsof -- firmware.bin
+fdisk -l firmware.bin
+parted firmware.bin unit B print
+
+# Inspect one partition without copying it
+sudo losetup --find --show --read-only \
+  --offset "$PART_OFF" --sizelimit "$PART_LEN" firmware.bin
+```
+
+Prefer a disposable VM when the original init logic or an LVM stack must see the whole image. Historical boot logs from a standard boot partition are especially useful: the bootloader may have logged proprietary-container offsets, component lengths, slot selection, alignment rules, and signature verification. Use those values to carve an embedded command line/kernel/initramfs, then validate each output independently with `file`, magic bytes, and `binwalk`; reading to end-of-container can accidentally append an initrd, ACPI object, or signature to the kernel.<sup>[[9]](#references)</sup>
+
+#### Recover the boot-time block map
+
+Extract the kernel's initramfs and reverse its `/init` plus any storage libraries. In [Reversing Tools & Basic Methods](../../reversing/reversing-tools-basic-methods/), follow string references for `/proc/cmdline`, `/dev/mapper/`, `dmsetup`, `BLKGETSIZE64`, and partition paths; then trace the code that selects the active A/B slot and builds the table. Useful radare2 starting points are `r2 -A init`, `afl`, `pdf @ main`, and `pdf @ fcn.xxxxx`.<sup>[[9]](#references)</sup>
+
+The linear target maps consecutive ranges of a virtual device onto ranges of one or more backing devices. A recovered two-segment table commonly has this shape (all positions and lengths are 512-byte sectors):<sup>[[9]](#references)[[10]](#references)</sup>
+
+```text
+0              <seg1_sectors> linear /dev/mmcblk0p2 0
+<seg1_sectors> <seg2_sectors> linear /dev/mmcblk0p4 <tail_start>
+```
+
+Reproduce the machine-code arithmetic exactly, including integer width, shifts, and unit conversions. For example, the following expression floors a byte size to a 4-KiB boundary and only then converts it to 512-byte sectors; replacing it with `p4_bytes // 512` shifts the selected tail by `p4_bytes % 4096` whenever the partition is not page-aligned.<sup>[[9]](#references)</sup>
+
+```python
+p4_sectors = (p4_bytes >> 12) << 3
+effective_bytes = p4_sectors * 512
+tail_start = effective_bytes - tail_distance
+```
+
+Reconstruct a flat analysis image by copying the ranges in table order with bounded chunks rather than loading the complete media dump into memory. This also avoids creating host-side mapper devices. Keep the GPT-derived offsets, reversed sector counts, and resulting output length as separate assertions.<sup>[[9]](#references)</sup>
+
+#### Distinguish corruption from a constant reconstruction error
+
+For SquashFS, check the `hsqs` magic and decode the little-endian 64-bit `bytes_used` field at superblock offset 40 before running `unsquashfs`. If extraction fails in several unrelated structures, search a broad window around the expected positions and require strong structural candidates: a decompressible metadata block, several consecutive valid directory entries, plausible inode fields, a root inode consistent with the inode count, or valid integrity-metadata structure. A single magic match is insufficient.<sup>[[9]](#references)</sup>
+
+```python
+import struct
+
+with open("rootfs.img", "rb") as f:
+    sb = f.read(96)
+assert sb[:4] == b"hsqs"
+bytes_used = struct.unpack_from("<Q", sb, 40)[0]
+nominal_end = (bytes_used + 4095) & ~4095
+print(hex(bytes_used), hex(nominal_end))
+```
+
+When the same signed delta makes independent structures valid—for example, directory metadata and a verity record—the likely cause is a systematic segment-start error rather than missing bytes. Return to the reversed arithmetic and look for discarded remainders, signedness, overflow, or sector/page rounding before attempting orphan recovery or patching filesystem metadata.<sup>[[9]](#references)</sup>
+
+Finally, keep protection boundaries separate: TPM-sealed LUKS volumes protect data confidentiality, whereas a signed dm-verity mapping protects root-filesystem integrity. A software TPM does not recover a key sealed to the original physical TPM, and booting a modified SquashFS through a research-only init that omits verity verification does not forge its signature or break dm-verity.<sup>[[9]](#references)</sup>
+
 ## Analyzing Firmware
 
 Once the firmware is obtained, it's essential to dissect it for understanding its structure and potential vulnerabilities. This process involves utilizing various tools to analyze and extract valuable data from the firmware image.
@@ -207,7 +328,7 @@ Both source code and compiled binaries found in the filesystem must be scrutiniz
 
 ## Harvesting cloud config and MQTT credentials via derived URL tokens
 
-Many IoT hubs fetch their per-device configuration from a cloud endpoint that looks like:
+Many IoT hubs fetch their per-device configuration from a cloud endpoint that looks like:<sup>[[5]](#references)</sup>
 
 - `https://<api-host>/pf/<deviceId>/<token>`
 
@@ -316,6 +437,50 @@ For ARM binaries, the process is similar, with the `qemu-arm` emulator being uti
 
 Tools like [Firmadyne](https://github.com/firmadyne/firmadyne), [Firmware Analysis Toolkit](https://github.com/attify/firmware-analysis-toolkit), and others, facilitate full firmware emulation, automating the process and aiding in dynamic analysis.
 
+### Reconstructing split and verified root filesystems for emulation
+
+If a SquashFS superblock is readable but inode, directory, or fragment-table offsets are impossible, do not immediately patch `unsquashfs`. Reverse the early boot binary and reproduce the block-device graph it creates: embedded systems may expose a nominal root partition but construct the real filesystem with a `dm-linear` mapping that appends sectors borrowed from another partition. Superblock-only checks can succeed even when every later metadata block is displaced.<sup>[[11]](#references)</sup>
+
+Preserve the firmware's arithmetic exactly. In particular, identify whether lengths are bytes, 512-byte sectors, or 4 KiB pages; reproduce shifts and truncation in their original order; and account for bank-dependent tail regions in A/B layouts. For example, `(partition_bytes >> 12) << 3` first truncates to a 4 KiB boundary and only then expresses the result in 512-byte sectors; replacing it with `partition_bytes // 512` can move the appended extent by a few kilobytes and corrupt all downstream SquashFS tables.<sup>[[11]](#references)</sup>
+
+A useful validation workflow is:<sup>[[11]](#references)</sup>
+
+1. Recover each `dm-linear` segment's source device, start sector, and length from the verifier/init binary.
+2. Concatenate or map the extents without changing their alignment semantics.
+3. If extraction still fails, search only a small window around the predicted boundary and require several consecutive valid metadata structures, rather than accepting a plausible superblock alone.
+4. Run an unmodified `unsquashfs` against the reconstructed image; successful traversal of all directories and fragments is stronger evidence than `unsquashfs -stat`.
+
+#### Analyst-controlled dm-verity replacement
+
+When the analyst controls the QEMU kernel, initramfs, and virtual disks, a modified root can be booted by replacing the vendor's verification PID 1 with a small statically linked init. This is a **lab boot-chain substitution**, not a break of dm-verity, its RSA signature, Secure Boot, or a TPM-sealed key.<sup>[[11]](#references)</sup>
+
+The replacement init should mirror the operational parts of the original boot path: mount `devtmpfs`, call `setsid()`, connect `/dev/console` to file descriptors 0–2, mount `/proc` and `/sys`, wait for the supplied block device, mount the edited root read-only, detach the old-root pseudo-filesystems, move the new mount onto `/`, `chroot`, and `execve()` the firmware's original `/sbin/init`. Detaching `/dev`, `/proc`, and `/sys` **before** `MS_MOVE` avoids accidentally detaching mount points belonging to the new root.<sup>[[11]](#references)</sup>
+
+Keep mutable device state separate from the modified immutable root. A qcow2 overlay can preserve the original disk's LVM state while a second read-only virtio disk supplies the edited SquashFS:<sup>[[11]](#references)</sup>
+
+```bash
+qemu-img create -f qcow2 -F raw -b emmc.raw overlay.qcow2
+qemu-system-x86_64 ... -kernel bzImage -initrd custom-initramfs.cpio.gz \
+  -drive if=none,id=emmc,format=qcow2,file=overlay.qcow2 \
+  -device sdhci-pci -device sd-card,drive=emmc \
+  -drive if=virtio,format=raw,readonly=on,file=rootfs-edited.squashfs
+```
+
+#### Offline image-state debugging
+
+Inspect persistent state outside the guest when slow boots, destructive startup scripts, or unreliable console logging obscure the failure. Never attach an overlay that a running VM is using; expose it with `qemu-nbd`, constrain LVM discovery to the intended NBD partition, and deactivate the volume group before disconnecting it.<sup>[[11]](#references)</sup>
+
+```bash
+sudo modprobe nbd max_part=16
+sudo qemu-nbd --connect=/dev/nbd0 overlay.qcow2
+sudo vgscan --config 'devices { filter = ["a|/dev/nbd0p4|", "r|.*|"] }'
+# inspect/fsck/mount the discovered logical volumes
+sudo vgchange -an VG_NAME
+sudo qemu-nbd --disconnect /dev/nbd0
+```
+
+For repeatable fault isolation, write timestamped marker files to a stable writable volume and verify them offline; `/dev/kmsg`, FIFOs, and transient consoles can produce false negatives through rate limiting or early process death. Also compare exact interfaces across layers before changing unrelated code: `uname -r` versus `/lib/modules/`, on-disk ext4 features versus kernel configuration, and the Mesa `libGL` generation versus DRI driver ABI and PCI-derived driver names. A component can exist and even `dlopen()` successfully while remaining unusable because its consumer expects a different ABI.<sup>[[11]](#references)</sup>
+
 ## Dynamic Analysis in Practice
 
 At this stage, either a real or emulated device environment is used for analysis. It's essential to maintain shell access to the OS and filesystem. Emulation may not perfectly mimic hardware interactions, necessitating occasional emulation restarts. Analysis should revisit the filesystem, exploit exposed webpages and network services, and explore bootloader vulnerabilities. Firmware integrity tests are critical to identify potential backdoor vulnerabilities.
@@ -324,7 +489,7 @@ At this stage, either a real or emulated device environment is used for analysis
 
 Runtime analysis involves interacting with a process or binary in its operating environment, using tools like gdb-multiarch, Frida, and Ghidra for setting breakpoints and identifying vulnerabilities through fuzzing and other techniques.
 
-For embedded targets without a full debugger, **copy a statically-linked `gdbserver`** to the device and attach remotely:
+For embedded targets without a full debugger, **copy a statically-linked `gdbserver`** to the device and attach remotely:<sup>[[6]](#references)</sup>
 
 ```bash
 # On device
@@ -339,7 +504,7 @@ target remote <device-ip>:1234
 
 ### Zigbee / radio-co-processor message mapping
 
-On IoT hubs the RF stack is often split between a **radio MCU** and a Linux userland process. A useful workflow is to map the path:
+On IoT hubs the RF stack is often split between a **radio MCU** and a Linux userland process. A useful workflow is to map the path:<sup>[[8]](#references)</sup>
 
 1. **RF frame** on the air
 2. **controller-side parser** on the radio MCU
@@ -358,7 +523,7 @@ For Zigbee specifically, capture pairing traffic and check whether the target st
 
 ### Manufacturer-specific protocol handlers and FSM-gated reachability
 
-Vendor-specific Zigbee/ZCL commands are often a better target than standardized clusters because they feed **custom parsing code** and internal **FSMs** with less battle-tested validation.
+Vendor-specific Zigbee/ZCL commands are often a better target than standardized clusters because they feed **custom parsing code** and internal **FSMs** with less battle-tested validation.<sup>[[8]](#references)</sup>
 
 Practical workflow:
 
@@ -371,7 +536,7 @@ For timing-sensitive protocols, packet replay from a Python framework may be too
 
 ### Fragmented-download bug class in embedded daemons
 
-A recurring firmware bug class appears in **fragmented blob/model/configuration downloads**:
+A recurring firmware bug class appears in **fragmented blob/model/configuration downloads**:<sup>[[8]](#references)</sup>
 
 1. The **first fragment** (`offset == 0`) stores `ctx->total_size` and allocates `malloc(total_size)`.
 2. Later fragments only validate the attacker-controlled **packet-local** fields such as `packet_total_size >= offset + chunk_len`.
@@ -387,7 +552,7 @@ When the vulnerable path sits behind commissioning logic, exploitation must incl
 
 ### Protocol-driven `free()` triggers
 
-In embedded daemons, the easiest way to trigger heap metadata exploitation is often not "wait for cleanup" but **force the protocol's own error handling**:
+In embedded daemons, the easiest way to trigger heap metadata exploitation is often not "wait for cleanup" but **force the protocol's own error handling**:<sup>[[8]](#references)</sup>
 
 - Send malformed follow-up fragments to push the FSM into **retry** or **error** states.
 - Exceed the retry threshold so the daemon **resets context** and frees the corrupted buffer.
@@ -401,7 +566,7 @@ Developing a PoC for identified vulnerabilities requires a deep understanding of
 
 ### uClibc fastbin exploitation notes (embedded Linux)
 
-- **Fastbins + consolidation:** uClibc uses fastbins similar to glibc. A later large allocation can trigger `__malloc_consolidate()`, so any fake chunk must survive checks (sane size, `fd = 0`, and surrounding chunks seen as "in use").
+- **Fastbins + consolidation:** uClibc uses fastbins similar to glibc. A later large allocation can trigger `__malloc_consolidate()`, so any fake chunk must survive checks (sane size, `fd = 0`, and surrounding chunks seen as "in use").<sup>[[6]](#references)</sup>
 - **Non-PIE binaries under ASLR:** if ASLR is enabled but the main binary is **non-PIE**, in-binary `.data/.bss` addresses are stable. You can target a region that already resembles a valid heap chunk header to land a fastbin allocation on a **function pointer table**.
 - **Parser-stopping NUL:** when JSON is parsed, a `\x00` in the payload can stop parsing while keeping trailing attacker-controlled bytes for a stack pivot/ROP chain.
 - **Shellcode via `/proc/self/mem`:** a ROP chain that calls `open("/proc/self/mem")`, `lseek()`, and `write()` can plant executable shellcode in a known mapping and jump to it.
@@ -417,7 +582,7 @@ Operating systems like [AttifyOS](https://github.com/adi0x90/attifyos) and [Embe
 
 ## Firmware Downgrade Attacks & Insecure Update Mechanisms
 
-Even when a vendor implements cryptographic signature checks for firmware images, **version rollback (downgrade) protection is frequently omitted**. When the boot- or recovery-loader only verifies the signature with an embedded public key but does not compare the *version* (or a monotonic counter) of the image being flashed, an attacker can legitimately install an **older, vulnerable firmware that still bears a valid signature** and thus re-introduce patched vulnerabilities.
+Even when a vendor implements cryptographic signature checks for firmware images, **version rollback (downgrade) protection is frequently omitted**. When the boot- or recovery-loader only verifies the signature with an embedded public key but does not compare the *version* (or a monotonic counter) of the image being flashed, an attacker can legitimately install an **older, vulnerable firmware that still bears a valid signature** and thus re-introduce patched vulnerabilities.<sup>[[4]](#references)</sup>
 
 Typical attack workflow:
 
@@ -440,11 +605,11 @@ Content-Type: application/octet-stream
 Content-Length: 0
 ```
 
-In the vulnerable (downgraded) firmware, the `md5` parameter is concatenated directly into a shell command without sanitisation, allowing injection of arbitrary commands (here – enabling SSH key-based root access). Later firmware versions introduced a basic character filter, but the absence of downgrade protection renders the fix moot.
+In the vulnerable (downgraded) firmware, the `md5` parameter is concatenated directly into a shell command without sanitisation, allowing injection of arbitrary commands (here – enabling SSH key-based root access). Later firmware versions introduced a basic character filter, but the absence of downgrade protection renders the fix moot.<sup>[[4]](#references)</sup>
 
 ### Extracting Firmware From Mobile Apps
 
-Many vendors bundle full firmware images inside their companion mobile applications so that the app can update the device over Bluetooth/Wi-Fi. These packages are commonly stored unencrypted in the APK/APEX under paths like `assets/fw/` or `res/raw/`. Tools such as `apktool`, `ghidra`, or even plain `unzip` allow you to pull signed images without touching the physical hardware.
+Many vendors bundle full firmware images inside their companion mobile applications so that the app can update the device over Bluetooth/Wi-Fi. These packages are commonly stored unencrypted in the APK/APEX under paths like `assets/fw/` or `res/raw/`. Tools such as `apktool`, `ghidra`, or even plain `unzip` allow you to pull signed images without touching the physical hardware.<sup>[[4]](#references)</sup>
 
 ```
 $ apktool d vendor-app.apk -o vendor-app
@@ -454,7 +619,7 @@ firmware_v1.3.11.490_signed.bin
 
 ### Updater-only anti-rollback bypass in A/B slot designs
 
-Some vendors do implement an anti-downgrade **ratchet**, but only inside the *updater* logic (for example a UDS routine over CAN, a recovery command, or a userspace OTA agent). If the **bootloader** later checks only the image signature/CRC and trusts the partition table or slot metadata, rollback protection can still be bypassed.
+Some vendors do implement an anti-downgrade **ratchet**, but only inside the *updater* logic (for example a UDS routine over CAN, a recovery command, or a userspace OTA agent). If the **bootloader** later checks only the image signature/CRC and trusts the partition table or slot metadata, rollback protection can still be bypassed.<sup>[[7]](#references)</sup>
 
 Typical weak design:
 
@@ -491,7 +656,7 @@ Things to look for when reversing A/B update implementations:
 * Is slot activation metadata **bound to the validated firmware digest/version**, or can a slot be modified after promotion?
 * After a slot switch succeeds, is the device forced to reboot or are later update/erase routines still reachable in the same session?
 * Does userland code perform additional sanity checks (e.g. allowed partition map, model number)?
-* Are *partial* or *backup* update flows re-using the same validation logic?
+* Are *partial* or *backup* update flows reusing the same validation logic?
 
 > 💡  If any of the above are missing, the platform is probably vulnerable to rollback attacks.
 
@@ -512,18 +677,66 @@ To practice discovering vulnerabilities in firmware, use the following vulnerabl
 - Damn Vulnerable IoT Device (DVID)
   - [https://github.com/Vulcainreo/DVID](https://github.com/Vulcainreo/DVID)
 
-## Trainning and Cert
+## Recovering firmware decryption keys from embedded KMS/Vault state
+
+When an update image mixes small plaintext metadata with a large high-entropy blob, do container triage before brute-forcing anything:<sup>[[1]](#references)</sup>
+
+- Dump headers, offsets and line boundaries with `hexdump`, `xxd`, `strings -tx`, `base64 -d`, and `binwalk -E`.
+- `Salted__` usually means OpenSSL `enc` format: the next 8 bytes are the salt and the remaining bytes are ciphertext.
+- A Base64 field that decodes to exactly `256` bytes is a strong hint that you are looking at an RSA-2048 ciphertext wrapping a random firmware password/session key.
+- Detached PGP material in the same file often protects authenticity only; do not assume it is the confidentiality mechanism.
+
+If static key hunting (`grep`, `strings`, PEM/PGP searches) fails, reverse the **operational decrypt path** instead of only searching for private keys:
+
+- Decompile the updater / management binary and trace who reads the encrypted blob, which helper/API unwraps it, and the logical key name it requests.
+- Search the extracted root filesystem for KMS state (`vault/`, `transit/`, `pkcs11`, `keystore`, `sealed-secrets`) plus unit files and init scripts.
+- Treat plaintext `vault operator unseal ...`, recovery keys, bootstrap tokens, or local KMS auto-unseal scripts as equivalent to private-key material.
+
+If the appliance ships the original Vault binary and storage backend, replaying that environment is usually easier than reimplementing Vault internals:
+
+```bash
+vault server -config=/tmp/vault.hcl
+vault operator unseal <share1>
+vault operator unseal <share2>
+vault operator unseal <share3>
+
+OTP=$(vault operator generate-root -generate-otp)
+INIT=$(vault operator generate-root -init -otp="$OTP" 2>&1 | sed 's/\x1b\[[0-9;]*m//g')
+NONCE=$(printf '%s\n' "$INIT" | awk '/Nonce/ {print $2}')
+vault operator generate-root -nonce="$NONCE" "<share1>"
+vault operator generate-root -nonce="$NONCE" "<share2>"
+FINAL=$(vault operator generate-root -nonce="$NONCE" "<share3>" 2>&1 | sed 's/\x1b\[[0-9;]*m//g')
+TOKEN=$(vault operator generate-root -decode="$(printf '%s\n' "$FINAL" | awk '/Root Token/ {print $3}')" -otp="$OTP")
+```
+
+With root on the cloned KMS:
+
+- Make transit keys exportable only inside the isolated clone: `vault write transit/keys/<name>/config exportable=true`
+- Export the unwrap key: `vault read transit/export/encryption-key/<name>`
+- Try the recovered RSA key with the exact padding/hash pair used by the KMS. A failed PKCS#1 v1.5 decrypt and a failed default OAEP decrypt do **not** prove the key is wrong; many Vault-backed flows use OAEP with SHA-256, while common libraries default to SHA-1.
+- If the payload starts with `Salted__`, reproduce the vendor's OpenSSL KDF exactly (`EVP_BytesToKey`, often MD5 on legacy appliances) before attempting AES-CBC decryption.
+
+This turns "encrypted firmware" into a more general problem: **recover the appliance-side operational keys, then reproduce the exact unwrap + KDF parameters offline**.
+
+## Training and Certifications
 
 - [https://www.attify-store.com/products/offensive-iot-exploitation](https://www.attify-store.com/products/offensive-iot-exploitation)
 
 ## References
 
-- [https://scriptingxss.gitbook.io/firmware-security-testing-methodology/](https://scriptingxss.gitbook.io/firmware-security-testing-methodology/)
-- [Practical IoT Hacking: The Definitive Guide to Attacking the Internet of Things](https://www.amazon.co.uk/Practical-IoT-Hacking-F-Chantzis/dp/1718500904)
-- [Exploiting zero days in abandoned hardware – Trail of Bits blog](https://blog.trailofbits.com/2025/07/25/exploiting-zero-days-in-abandoned-hardware/)
-- [How a $20 Smart Device Gave Me Access to Your Home](https://bishopfox.com/blog/how-a-20-smart-device-gave-me-access-to-your-home)
-- [Now You See mi: Now You're Pwned](https://labs.taszk.io/articles/post/nowyouseemi/)
-- [Synacktiv - Exploiting the Tesla Wall Connector from its charge port connector - Part 2: bypassing the anti-downgrade](https://www.synacktiv.com/en/publications/exploiting-the-tesla-wall-connector-from-its-charge-port-connector-part-2-bypassing)
-- [Make it Blink: Over-the-Air Exploitation of the Philips Hue Bridge](https://www.synacktiv.com/en/publications/make-it-blink-over-the-air-exploitation-of-the-philips-hue-bridge.html)
+- [1] [Cracking Firmware with Claude: Senior-Level Skill, Junior-Level Autonomy](https://bishopfox.com/blog/cracking-firmware-with-claude-senior-level-skill-junior-level-autonomy)
+- [2] [Firmware Security Testing Methodology](https://scriptingxss.gitbook.io/firmware-security-testing-methodology/)
+- [3] [Practical IoT Hacking: The Definitive Guide to Attacking the Internet of Things](https://www.amazon.co.uk/Practical-IoT-Hacking-F-Chantzis/dp/1718500904)
+- [4] [Exploiting zero days in abandoned hardware – Trail of Bits blog](https://blog.trailofbits.com/2025/07/25/exploiting-zero-days-in-abandoned-hardware/)
+- [5] [How a $20 Smart Device Gave Me Access to Your Home](https://bishopfox.com/blog/how-a-20-smart-device-gave-me-access-to-your-home)
+- [6] [Now You See mi: Now You're Pwned](https://labs.taszk.io/articles/post/nowyouseemi/)
+- [7] [Synacktiv - Exploiting the Tesla Wall Connector from its charge port connector - Part 2: bypassing the anti-downgrade](https://www.synacktiv.com/en/publications/exploiting-the-tesla-wall-connector-from-its-charge-port-connector-part-2-bypassing)
+- [8] [Make it Blink: Over-the-Air Exploitation of the Philips Hue Bridge](https://www.synacktiv.com/en/publications/make-it-blink-over-the-air-exploitation-of-the-philips-hue-bridge.html)
+- [9] [ROOT Tesla OS on QEMU Part 1: Unpacking](https://cn0xroot.wordpress.com/2026/09/19/root-tesla-os-on-qemu-part-1-unpacking)
+- [10] [Linux kernel documentation - dm-linear](https://docs.kernel.org/admin-guide/device-mapper/linear.html)
+- [11] [ROOT Tesla OS on QEMU Part 2: Debugging and Fixing](https://cn0xroot.wordpress.com/2026/09/20/root_tesla_os_on_qemu_part_2_debugging_fixing)
+- [12] [Dell BIOS Passwords: Weak XOR Encryption Allows Recovery from SPI Flash (CVE-2026-40639)](https://mdsec.co.uk/2026/07/dell-bios-passwords-weak-xor-encryption-allows-recovery-from-spi-flash-cve-2026-40639)
+- [13] [R3n5k1/dellpwn - Dell BIOS password recovery tooling](https://github.com/R3n5k1/dellpwn)
+- [14] [VoidStar Security — Brushing Up on Hardware Hacking Part 2](https://voidstarsec.com/blog/brushing-up-part-2)
 
 {{#include ../../banners/hacktricks-training.md}}

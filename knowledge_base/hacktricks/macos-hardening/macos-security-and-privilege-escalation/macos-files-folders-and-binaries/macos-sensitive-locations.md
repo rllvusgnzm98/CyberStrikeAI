@@ -2,6 +2,7 @@
 
 {{#include ../../../banners/hacktricks-training.md}}
 
+
 ## Passwords
 
 ### Shadow Passwords
@@ -23,6 +24,23 @@ sudo bash -c 'for i in $(find /var/db/dslocal/nodes/Default/users -type f -regex
 
 Another way to obtain the `ShadowHashData` of a user is by using `dscl`: `` sudo dscl . -read /Users/`whoami` ShadowHashData ``
 
+#### Convert copied ShadowHashData on Linux
+
+If the attribute was copied to a Linux cracking host, save **only its hexadecimal bytes** (not the `ShadowHashData:` label) in `shadowhash.hex`. On Ubuntu, `libplist-utils` converts the decoded binary plist into readable XML without macOS `plutil`.<sup>[[5]](#references)</sup>
+
+```bash
+sudo apt install libplist-utils
+xxd -r -p shadowhash.hex > shadowhash.bplist
+plistutil -i shadowhash.bplist -o shadowhash.xml -f xml1
+```
+
+In the XML, use `iterations` and the base64 `salt` and `entropy` from **`SALTED-SHA512-PBKDF2`**, not the separate SRP verifier. Set `salt_b64` and `entropy_b64` to their respective XML `<data>` contents. Decode them to hex and form one line as `$ml$<iterations>$<salt_hex>$<entropy_hex>` for Hashcat mode `7100`. This is offline guessing after privileged hash acquisition, not an initial-access or privilege-escalation method.<sup>[[5]](#references)[[6]](#references)</sup>
+
+```bash
+printf '%s' "$salt_b64" | base64 -d | xxd -p -c 2000
+printf '%s' "$entropy_b64" | base64 -d | xxd -p -c 2000
+```
+
 ### /etc/master.passwd
 
 This file is **only used** when the system id running in **single-user mode** (so not very frequently).
@@ -40,7 +58,7 @@ security dump-keychain | grep -A 5 "keychain" | grep -v "version" #List keychain
 security dump-keychain -d #Dump all the info, included secrets (the user will be asked for his password, even if root)
 ```
 
-On modern macOS the most interesting backing stores are usually **`~/Library/Keychains/login.keychain-db`** and **`/Library/Keychains/System.keychain`**. They are SQLite-backed files, but plaintext access is still brokered by **`securityd`**: stealing the raw DB mainly gives you metadata and encrypted blobs unless you also recover the user's password, `SystemKey`, or an in-memory master key.
+On modern macOS the most interesting backing stores are usually **`~/Library/Keychains/login.keychain-db`** and **`/Library/Keychains/System.keychain`**. They are SQLite-backed files, but plaintext access is still brokered by **`securityd`**: stealing the raw DB mainly gives you metadata and encrypted blobs unless you also recover the user's password, `SystemKey`, or an in-memory master key.<sup>[[2]](#references)</sup>
 
 ### [Keychaindump](https://github.com/juuso/keychaindump)
 
@@ -65,7 +83,7 @@ sudo ./keychaindump
 
 ### chainbreaker
 
-[**Chainbreaker**](https://github.com/n0fate/chainbreaker) can be used to extract the following types of information from an OSX keychain in a forensically sound manner:
+[**Chainbreaker**](https://github.com/n0fate/chainbreaker) can extract the following types of information from a macOS keychain in a forensically sound manner:
 
 - Hashed Keychain password, suitable for cracking with [hashcat](https://hashcat.net/hashcat/) or [John the Ripper](https://www.openwall.com/john/)
 - Internet Passwords
@@ -114,7 +132,7 @@ python2.7 chainbreaker.py --dump-all --key 0293847570022761234562947e0bcd5bc04d1
 
 ```bash
 #Use volafox (https://github.com/n0fate/volafox) to extract possible keychain passwords
-# Unformtunately volafox isn't working with the latest versions of MacOS
+# Unfortunately, Volafox does not support recent macOS versions
 python vol.py -i ~/Desktop/show/macosxml.mem -o keychaindump
 
 #Try to extract the passwords using the extracted keychain passwords
@@ -132,7 +150,7 @@ python2.7 chainbreaker.py --dump-all --password-prompt /Users/<username>/Library
 
 ### Keychain master key via `gcore` entitlement (CVE-2025-24204)
 
-macOS 15.0 (Sequoia) shipped `/usr/bin/gcore` with the **`com.apple.system-task-ports.read`** entitlement, so any local admin (or malicious signed app) could dump **any process memory even with SIP/TCC enforced**. Dumping `securityd` leaks the **Keychain master key** in clear and lets you decrypt `login.keychain-db` without the user password.
+macOS 15.0 (Sequoia) shipped `/usr/bin/gcore` with the **`com.apple.system-task-ports.read`** entitlement, so any local admin (or malicious signed app) could dump **any process memory even with SIP/TCC enforced**. Dumping `securityd` leaks the **Keychain master key** in clear and lets you decrypt `login.keychain-db` without the user password.<sup>[[1]](#references)</sup>
 
 **Quick repro on vulnerable builds (15.0–15.2):**
 
@@ -187,8 +205,8 @@ sqlite3 "$HOME/Library/Group Containers/group.com.apple.usernoted/db2/db"   "sel
 
 #### Recent privacy issues (NotificationCenter DB)
 
-- In macOS **14.7–15.1** Apple stored banner content in the `db2/db` SQLite without proper redaction. CVEs **CVE-2024-44292/44293/40838/54504** allowed any local user to read other users' notification text just by opening the DB (no TCC prompt).
-- Apple mitigated this by moving the DB into `group.com.apple.usernoted` and protecting it with TCC on newer Sequoia builds, so on current systems you normally need the right user context or a TCC bypass to read it.
+- In macOS **14.7–15.1** Apple stored banner content in the `db2/db` SQLite without proper redaction. CVEs **CVE-2024-44292/44293/40838/54504** allowed any local user to read other users' notification text just by opening the DB (no TCC prompt).<sup>[[3]](#references)</sup>
+- Apple mitigated this by moving the DB into `group.com.apple.usernoted` and protecting it with TCC on newer Sequoia builds, so on current systems you normally need the right user context or a TCC bypass to read it.<sup>[[4]](#references)</sup>
 - On legacy endpoints, copy the `db`, `db-wal`, and `db-shm` files together before updating or rebooting if you want to preserve the artefacts.
 
 ### Notes
@@ -318,15 +336,15 @@ These are notifications that the user should see in the screen:
 
 - **`CFUserNotification`**: These API provides a way to show in the screen a pop-up with a message.
 - **The Bulletin Board**: This shows in iOS a banner that disappears and will be stored in the Notification Center.
-- **`NSUserNotificationCenter`**: This is the iOS bulletin board in MacOS. On older macOS releases the database usually lives in `/var/folders/<user temp>/0/com.apple.notificationcenter/db2/db`; on Sequoia+ it was moved to `~/Library/Group Containers/group.com.apple.usernoted/db2/db`.
+- **`NSUserNotificationCenter`**: The legacy notification-center service on macOS. On older releases, the database usually lives in `/var/folders/<user temp>/0/com.apple.notificationcenter/db2/db`; on Sequoia and later, it moved to `~/Library/Group Containers/group.com.apple.usernoted/db2/db`.
 
 ## References
 
-- [HelpNetSecurity – macOS gcore entitlement allowed Keychain master key extraction (CVE-2025-24204)](https://www.helpnetsecurity.com/2025/09/04/macos-gcore-vulnerability-cve-2025-24204/)
-- [Apple Platform Security – Keychain data protection](https://support.apple.com/guide/security/keychain-data-protection-secb0694df1a/web)
-- [9to5Mac – Apple addresses privacy concerns around Notification Center database in macOS Sequoia](https://9to5mac.com/2024/09/01/security-bite-apple-addresses-privacy-concerns-around-notification-center-database-in-macos-sequoia/)
+- [1] [HelpNetSecurity – macOS gcore entitlement allowed Keychain master key extraction (CVE-2025-24204)](https://www.helpnetsecurity.com/2025/09/04/macos-gcore-vulnerability-cve-2025-24204/)
+- [2] [Apple Platform Security – Keychain data protection](https://support.apple.com/guide/security/keychain-data-protection-secb0694df1a/web)
+- [3] [Rapid7 – Notification Center SQLite disclosure (CVE-2024-44292 et al.)](https://www.rapid7.com/db/vulnerabilities/apple-osx-notificationcenter-cve-2024-44292/)
+- [4] [9to5Mac – Apple addresses privacy concerns around Notification Center database in macOS Sequoia](https://9to5mac.com/2024/09/01/security-bite-apple-addresses-privacy-concerns-around-notification-center-database-in-macos-sequoia/)
+- [5] [SRA Labs – macOS Password Cracking](https://labs.sra.io/posts/macospasswordcracking)
+- [6] [Hashcat example hashes – macOS v10.8+ (PBKDF2-SHA512)](https://hashcat.net/wiki/doku.php?id=example_hashes)
 
 {{#include ../../../banners/hacktricks-training.md}}
-
-
-
