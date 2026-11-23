@@ -42,7 +42,7 @@ If you already control a box with admin rights, remember you can also **delegate
 - **Kerberos requires a hostname/FQDN**. If you connect by IP, the client usually falls back to **NTLM/Negotiate**.
 - In **workgroup** or cross-trust edge cases, NTLM commonly requires either **HTTPS** or the target to be added to **TrustedHosts** on the client.
 - With **local accounts** over Negotiate in a workgroup, UAC remote restrictions may prevent access unless the built-in Administrator account is used or `LocalAccountTokenFilterPolicy=1`.
-- PowerShell remoting defaults to the **`HTTP/<host>` SPN**. In environments where `HTTP/<host>` is already registered to some other service account, WinRM Kerberos may fail with `0x80090322`; use a port-qualified SPN or switch to **`WSMAN/<host>`** where that SPN exists.
+- PowerShell remoting defaults to the **`HTTP/<host>` SPN**. In environments where `HTTP/<host>` is already registered to some other service account, WinRM Kerberos may fail with `0x80090322`; use a port-qualified SPN or switch to **`WSMAN/<host>`** where that SPN exists.<sup>[[3]](#references)</sup>
 
 If you land valid credentials during password spraying, validating them over WinRM is often the fastest way to check whether they translate into a shell:
 
@@ -83,7 +83,7 @@ evil-winrm -i <HOST_FQDN> -r <REALM.LOCAL>
 
 ### Kerberos SPN edge case: `HTTP` vs `WSMAN`
 
-When the default **`HTTP/<host>`** SPN causes Kerberos failures, try requesting/using a **`WSMAN/<host>`** ticket instead. This appears in hardened or odd enterprise setups where `HTTP/<host>` is already attached to another service account.
+When the default **`HTTP/<host>`** SPN causes Kerberos failures, try requesting/using a **`WSMAN/<host>`** ticket instead. This appears in hardened or odd enterprise setups where `HTTP/<host>` is already attached to another service account.<sup>[[3]](#references)</sup>
 
 ```bash
 # Example: use a WSMAN ticket instead of the default HTTP SPN
@@ -109,7 +109,7 @@ Client-certificate WinRM is much less common than password/hash/Kerberos auth, b
 
 ### Python / automation with `pypsrp`
 
-If you need automation rather than an operator shell, `pypsrp` gives you WinRM/PSRP from Python with **NTLM**, **certificate auth**, **Kerberos**, and **CredSSP** support.
+If you need automation rather than an operator shell, `pypsrp` gives you WinRM/PSRP from Python with **NTLM**, **certificate auth**, **Kerberos**, and **CredSSP** support.<sup>[[2]](#references)</sup>
 
 ```python
 from pypsrp.client import Client
@@ -149,7 +149,7 @@ with wsman, RunspacePool(wsman, configuration_name="MyJEAEndpoint") as pool, Pow
 
 ### Custom PSRP endpoints and JEA matter during lateral movement
 
-A successful WinRM authentication does **not** always mean you land in the default unrestricted `Microsoft.PowerShell` endpoint. Mature environments may expose **custom session configurations** or **JEA** endpoints with their own ACLs and run-as behavior.
+A successful WinRM authentication does **not** always mean you land in the default unrestricted `Microsoft.PowerShell` endpoint. Mature environments may expose **custom session configurations** or **JEA** endpoints with their own ACLs and run-as behavior.<sup>[[1]](#references)</sup>
 
 If you already have code execution on a Windows host and want to understand what remoting surfaces exist, enumerate the registered endpoints:
 
@@ -168,6 +168,10 @@ Practical offensive implications:
 - A **restricted** endpoint can still be enough for lateral movement if it exposes just the right cmdlets/functions for service control, file access, process creation, or arbitrary .NET / external command execution.
 - A **misconfigured JEA** role is especially valuable when it exposes dangerous commands such as `Start-Process`, broad wildcards, writable providers, or custom proxy functions that let you escape the intended restrictions.
 - Endpoints backed by **RunAs virtual accounts** or **gMSAs** change the effective security context of the commands you run. In particular, a gMSA-backed endpoint can provide **network identity on the second hop** even when a normal WinRM session would hit the classic delegation problem.
+
+For a custom restricted endpoint, inspect its effective command and script permissions separately: a short `Get-Command` list alone does not prove that an existing `.ps1` cannot run. [JEA role capabilities](https://learn.microsoft.com/en-us/powershell/scripting/security/remoting/jea/role-capabilities) explicitly control which script paths can be invoked; other custom endpoints may apply different session rules. If a permitted script uses a stored `SecureString` to create a credential for another host, a blob made without an explicit key uses [Windows DPAPI](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/convertfrom-securestring) and generally needs the protecting user and machine context to decrypt. Review the script's ACL, permitted invocation, run-as identity, and downstream credential rights before treating writable source or a copied blob as a cross-host escalation path. Do not print the protected value during passive enumeration.
+
+For a JEA custom function that accepts a file path, review the registered endpoint ACL, mapped role capability, and effective run-as identity together. A caller may have `NoLanguage` while the function body runs in the system's default language mode; a virtual account can also have local administrator rights. If the function checks an allowed directory with a raw string prefix and later reads the supplied path, `..` components may resolve outside that directory. The boundary is the resolved path under the function's identity, not the caller's language mode or the apparent prefix. Confirm the reachable function and its final-path validation before treating a readable `.psrc` or `.pssc` file as a privileged file-read finding. See Microsoft's [JEA role capability](https://learn.microsoft.com/en-us/powershell/scripting/security/remoting/jea/role-capabilities) and [security considerations](https://learn.microsoft.com/en-us/powershell/scripting/security/remoting/jea/security-considerations) guidance.
 
 ## Windows-native WinRM lateral movement
 
@@ -239,18 +243,16 @@ For multi-hop constraints after landing a first WinRM session, check:
 
 - **Interactive PowerShell remoting** usually creates **`wsmprovhost.exe`** on the target.
 - **`winrs.exe`** commonly creates **`winrshost.exe`** and then the requested child process.
-- Custom **JEA** endpoints may execute actions as **`WinRM_VA_*`** virtual accounts or as a configured **gMSA**, which changes both telemetry and second-hop behavior compared to a normal user-context shell.
+- Custom **JEA** endpoints may execute actions as **`WinRM_VA_*`** virtual accounts or as a configured **gMSA**, which changes both telemetry and second-hop behavior compared to a normal user-context shell.<sup>[[1]](#references)</sup>
 - Expect **network logon** telemetry, WinRM service events, and PowerShell operational/script-block logging if you use PSRP rather than raw `cmd.exe`.
 - If you only need a single command, `winrs.exe` or one-shot WinRM execution may be quieter than a long-lived interactive remoting session.
 - If Kerberos is available, prefer **FQDN + Kerberos** over IP + NTLM to reduce both trust issues and awkward client-side `TrustedHosts` changes.
 
 ## References
 
-- [Microsoft: JEA Security Considerations](https://learn.microsoft.com/en-us/powershell/scripting/security/remoting/jea/security-considerations?view=powershell-7.6)
-- [pypsrp README](https://github.com/jborean93/pypsrp)
-- [Microsoft: Error `0x80090322` when connecting PowerShell to a remote server via WinRM](https://learn.microsoft.com/en-us/troubleshoot/windows-server/system-management-components/error-0x80090322-when-connecting-powershell-to-remote-server-via-winrm)
+- [1] [Microsoft: JEA Security Considerations](https://learn.microsoft.com/en-us/powershell/scripting/security/remoting/jea/security-considerations?view=powershell-7.6)
+- [2] [pypsrp README](https://github.com/jborean93/pypsrp)
+- [3] [Microsoft: Error `0x80090322` when connecting PowerShell to a remote server via WinRM](https://learn.microsoft.com/en-us/troubleshoot/windows-server/system-management-components/error-0x80090322-when-connecting-powershell-to-remote-server-via-winrm)
 
 
 {{#include ../../banners/hacktricks-training.md}}
-
-

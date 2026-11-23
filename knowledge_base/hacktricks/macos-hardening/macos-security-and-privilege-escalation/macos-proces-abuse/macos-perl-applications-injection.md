@@ -36,7 +36,7 @@ PERL5LIB=/tmp/ PERL5OPT=-Mpmod perl victim.pl
 
 ### Other interesting environment variables
 
-* **`PERL5DB`** – when the interpreter is started with the **`-d`** (debugger) flag, the content of `PERL5DB` is executed as Perl code *inside* the debugger context.  
+- **`PERL5DB`** – when the interpreter is started with the **`-d`** (debugger) flag, the content of `PERL5DB` is executed as Perl code *inside* the debugger context.  
   If you can influence both the environment **and** the command-line flags of a privileged Perl process you can do something like:
   
   ```bash
@@ -44,7 +44,7 @@ PERL5LIB=/tmp/ PERL5OPT=-Mpmod perl victim.pl
   sudo perl -d /usr/bin/some_admin_script.pl   # will drop a shell before executing the script
   ```
 
-* **`PERL5SHELL`** – on Windows this variable controls which shell executable Perl will use when it needs to spawn a shell. It is mentioned here only for completeness, as it is not relevant on macOS.
+- **`PERL5SHELL`** – on Windows this variable controls which shell executable Perl will use when it needs to spawn a shell. It is mentioned here only for completeness, as it is not relevant on macOS.
 
 Although `PERL5DB` requires the `-d` switch, it is common to find maintenance or installer scripts that are executed as *root* with this flag enabled for verbose troubleshooting, making the variable a valid escalation vector.
 
@@ -80,15 +80,15 @@ For example, if a script is importing **`use File::Basename;`** it would be poss
 ## SIP bypass via Migration Assistant (CVE-2023-32369 “Migraine”)
 
 In May 2023 Microsoft disclosed **CVE-2023-32369**, nick-named **Migraine**, a post-exploitation technique that allows a *root* attacker to completely **bypass System Integrity Protection (SIP)**.  
-The vulnerable component is **`systemmigrationd`**, a daemon entitled with **`com.apple.rootless.install.heritable`**. Any child process spawned by this daemon inherits the entitlement and therefore runs **outside** SIP restrictions.
+The vulnerable component is **`systemmigrationd`**, a daemon entitled with **`com.apple.rootless.install.heritable`**. Any child process spawned by this daemon inherits the entitlement and therefore runs **outside** SIP restrictions.<sup>[[1]](#references)</sup>
 
-Among the children identified by the researchers is the Apple-signed interpreter:
+Among the children identified by the researchers is the Apple-signed interpreter:<sup>[[1]](#references)</sup>
 
 ```
 /usr/bin/perl /usr/libexec/migrateLocalKDC …
 ```
 
-Because Perl honors `PERL5OPT` (and Bash honors `BASH_ENV`), poisoning the daemon’s *environment* is enough to gain arbitrary execution in a SIP-less context:
+Because Perl honors `PERL5OPT` (and Bash honors `BASH_ENV`), poisoning the daemon’s *environment* is enough to gain arbitrary execution in a SIP-less context:<sup>[[1]](#references)[[2]](#references)</sup>
 
 ```bash
 # As root
@@ -100,7 +100,7 @@ open -a "Migration Assistant.app"   # or programmatically invoke /System/Library
 
 When `migrateLocalKDC` runs, `/usr/bin/perl` starts with the malicious `PERL5OPT` and executes `/private/tmp/migraine.sh` *before SIP is re-enabled*. From that script you can, for instance, copy a payload inside **`/System/Library/LaunchDaemons`** or assign the `com.apple.rootless` extended attribute to make a file **undeletable**.
 
-Apple fixed the issue in macOS **Ventura 13.4**, **Monterey 12.6.6** and **Big Sur 11.7.7**, but older or un-patched systems remain exploitable.
+Apple fixed the issue in macOS **Ventura 13.4**, **Monterey 12.6.6** and **Big Sur 11.7.7**, but older or un-patched systems remain exploitable.<sup>[[1]](#references)</sup>
 
 ## Hardening recommendations
 
@@ -111,7 +111,7 @@ Apple fixed the issue in macOS **Ventura 13.4**, **Monterey 12.6.6** and **Big S
 
 ## References
 
-- Microsoft Security Blog – “New macOS vulnerability, Migraine, could bypass System Integrity Protection” (CVE-2023-32369), May 30 2023.
-- Hackyboiz – “macOS SIP Bypass (PERL5OPT & BASH_ENV) research”, May 2025.
+- [1] [Microsoft Security Blog – New macOS vulnerability, Migraine, could bypass System Integrity Protection (CVE-2023-32369)](https://www.microsoft.com/en-us/security/blog/2023/05/30/new-macos-vulnerability-migraine-could-bypass-system-integrity-protection/)
+- [2] [Hackyboiz – macOS: Part1 - SIP Bypass](https://hackyboiz.github.io/2025/05/11/clalxk/MacOS_SIP-Bypass_en/)
 
 {{#include ../../../banners/hacktricks-training.md}}
