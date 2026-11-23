@@ -23,15 +23,42 @@ A MDM will have permission to install, query or remove profiles, install applica
 
 In order to run your own MDM you need to **your CSR signed by a vendor** which you could try to get with [**https://mdmcert.download/**](https://mdmcert.download/). And to run your own MDM for Apple devices you could use [**MicroMDM**](https://github.com/micromdm/micromdm).
 
-However, to install an application in an enrolled device, you still need it to be signed by a developer account... however, upon MDM enrolment the **device adds the SSL cert of the MDM as a trusted CA**, so you can now sign anything.
+MDM enrollment does **not** automatically make the management server's TLS certificate a trusted CA or grant an app-signing identity. If the server uses a private CA, its root and intermediate certificates must be supplied in the enrollment profile or a separate trust profile. The client identity used for MDM authentication is a different certificate.<sup>[[7]](#references)</sup>
 
-To enrol the device in a MDM you. need to install a **`mobileconfig`** file as root, which could be delivered via a **pkg** file (you could compress it in zip and when downloaded from safari it will be decompressed).
+A downloaded MDM enrollment profile (`.mobileconfig`) must be opened and approved in **System Settings → General → Device Management**. Merely placing it in a root-installed `.pkg` or Safari-opened ZIP does not silently enroll a current Mac. See [configuration profile behavior](../macos-auto-start-locations.md#configuration-profiles-mobileconfig).<sup>[[8]](#references)</sup>
+
+Automated Device Enrollment during Setup Assistant is a separate flow. See [rogue enrollment of another organization's device](macos-mdm/enrolling-devices-in-other-organisations.md) for its different prerequisites.<sup>[[9]](#references)</sup>
 
 **Mythic agent Orthrus** uses this technique.
 
+### Deploying a package through a controlled MDM
+
+On a **supervised Mac running macOS 26 or later**, control of the MDM service permits a `com.apple.configuration.package` declaration in the system scope.<sup>[[10]](#references)</sup> The package must have a signature the device can verify, but its app does not need a separate Developer ID signature: Gatekeeper does not check apps installed through device management.<sup>[[11]](#references)</sup> A trusted server TLS certificate alone does not give the operator the private key or signing usage needed for that package signature.<sup>[[11]](#references)[[12]](#references)</sup>
+
+Build a signed test package, compute its digest, and publish both the package and a `ManifestURL` plist over HTTPS. The manifest needs one `software-package` asset with its URL and SHA-256, plus a unique `bundle-identifier` and `bundle-version`.<sup>[[11]](#references)</sup> Then send a package declaration with that manifest URL and `InstallBehavior.Install` set to `Required`; check the `package.list` status item for installation or errors.<sup>[[10]](#references)[[11]](#references)</sup>
+
+```bash
+pkgbuild --component ./Test.app --install-location /Applications --sign "Package Signing Certificate" ./Test.pkg
+shasum -a 256 ./Test.pkg
+```
+
+A minimal required-install declaration, submitted through the MDM service, looks like this (replace the URL and both UUIDs).<sup>[[10]](#references)</sup>
+
+```json
+{
+  "Type": "com.apple.configuration.package",
+  "Identifier": "11111111-1111-4111-8111-111111111111",
+  "ServerToken": "22222222-2222-4222-8222-222222222222",
+  "Payload": {
+    "ManifestURL": "https://mdm.example.org/TestPackage.plist",
+    "InstallBehavior": {"Install": "Required"}
+  }
+}
+```
+
 ### Abusing JAMF PRO
 
-JAMF can run **custom scripts** (scripts developed by the sysadmin), **native payloads** (local account creation, set EFI password, file/process monitoring...) and **MDM** (device configurations, device certificates...).
+JAMF can run **custom scripts** (scripts developed by the sysadmin), **native payloads** (local account creation, set EFI password, file/process monitoring...) and **MDM** (device configurations, device certificates...).<sup>[[5]](#references)</sup>
 
 #### JAMF self-enrolment
 
@@ -47,7 +74,7 @@ Moreover, after finding proper credentials you could be able to brute-force othe
 
 <figure><img src="../../images/image (167).png" alt=""><figcaption></figcaption></figure>
 
-The **`jamf`** binary contained the secret to open the keychain which at the time of the discovery was **shared** among everybody and it was: **`jk23ucnq91jfu9aj`**.\
+The **`jamf`** binary contained the secret to open the keychain which at the time of the discovery was **shared** among everybody and it was: **`jk23ucnq91jfu9aj`**.<sup>[[5]](#references)</sup>\
 Moreover, jamf **persist** as a **LaunchDaemon** in **`/Library/LaunchAgents/com.jamf.management.agent.plist`**
 
 #### JAMF Device Takeover
@@ -132,7 +159,7 @@ dscl "/Active Directory/[Domain]/All Domains" ls /
 
 Also there are some tools prepared for MacOS to automatically enumerate the AD and play with kerberos:
 
-- [**Machound**](https://github.com/XMCyber/MacHound): MacHound is an extension to the Bloodhound audting tool allowing collecting and ingesting of Active Directory relationships on MacOS hosts.
+- [**Machound**](https://github.com/XMCyber/MacHound): MacHound is an extension to the Bloodhound audting tool allowing collecting and ingesting of Active Directory relationships on MacOS hosts.<sup>[[2]](#references)</sup>
 - [**Bifrost**](https://github.com/its-a-feature/bifrost): Bifrost is an Objective-C project designed to interact with the Heimdal krb5 APIs on macOS. The goal of the project is to enable better security testing around Kerberos on macOS devices using native APIs without requiring any other framework or packages on the target.
 - [**Orchard**](https://github.com/its-a-feature/Orchard): JavaScript for Automation (JXA) tool to do Active Directory enumeration.
 
@@ -153,7 +180,7 @@ The three types of MacOS users are:
 The local information about users and groups is stored in in the folder _/var/db/dslocal/nodes/Default._\
 For example, the info about user called _mark_ is stored in _/var/db/dslocal/nodes/Default/users/mark.plist_ and the info about the group _admin_ is in _/var/db/dslocal/nodes/Default/groups/admin.plist_.
 
-In addition to using the HasSession and AdminTo edges, **MacHound adds three new edges** to the Bloodhound database:
+In addition to using the HasSession and AdminTo edges, **MacHound adds three new edges** to the Bloodhound database:<sup>[[2]](#references)</sup>
 
 - **CanSSH** - entity allowed to SSH to host
 - **CanVNC** - entity allowed to VNC to host
@@ -181,7 +208,7 @@ dscl "/Active Directory/TEST/All Domains" read "/Groups/[groupname]"
 dsconfigad -show
 ```
 
-More info in [https://its-a-feature.github.io/posts/2018/01/Active-Directory-Discovery-with-a-Mac/](https://its-a-feature.github.io/posts/2018/01/Active-Directory-Discovery-with-a-Mac/)
+More info in [https://its-a-feature.github.io/posts/2018/01/Active-Directory-Discovery-with-a-Mac/](https://its-a-feature.github.io/posts/2018/01/Active-Directory-Discovery-with-a-Mac/)<sup>[[3]](#references)[[6]](#references)</sup>
 
 ### Computer$ password
 
@@ -241,19 +268,24 @@ MacOS Red Teaming is different from a regular Windows Red Teaming as usually **M
 
 ### Safari
 
-When a file is downloaded in Safari, if its a "safe" file, it will be **automatically opened**. So for example, if you **download a zip**, it will be automatically decompressed:
+When a file is downloaded in Safari, if its a "safe" file, it will be **automatically opened**. So for example, if you **download a zip**, it will be automatically decompressed:<sup>[[1]](#references)</sup>
 
 <figure><img src="../../images/image (226).png" alt=""><figcaption></figcaption></figure>
 
+
+
 ## References
 
-- [**https://www.youtube.com/watch?v=IiMladUbL6E**](https://www.youtube.com/watch?v=IiMladUbL6E)
-- [**https://medium.com/xm-cyber/introducing-machound-a-solution-to-macos-active-directory-based-attacks-2a425f0a22b6**](https://medium.com/xm-cyber/introducing-machound-a-solution-to-macos-active-directory-based-attacks-2a425f0a22b6)
-- [**https://gist.github.com/its-a-feature/1a34f597fb30985a2742bb16116e74e0**](https://gist.github.com/its-a-feature/1a34f597fb30985a2742bb16116e74e0)
-- [**Come to the Dark Side, We Have Apples: Turning macOS Management Evil**](https://www.youtube.com/watch?v=pOQOh07eMxY)
-- [**OBTS v3.0: "An Attackers Perspective on Jamf Configurations" - Luke Roberts / Calum Hall**](https://www.youtube.com/watch?v=ju1IYWUv4ZA)
-
-
+- [1] [Gone Apple Pickin': Red Teaming MacOS Environments in 2021 - Cedric Owens (DEF CON 29)](https://www.youtube.com/watch?v=IiMladUbL6E)
+- [2] [Introducing MacHound: A Solution to macOS Active Directory Based Attacks](https://medium.com/xm-cyber/introducing-machound-a-solution-to-macos-active-directory-based-attacks-2a425f0a22b6)
+- [3] [its-a-feature - Domain Enumeration Commands (dscl / net / ldapsearch equivalents)](https://gist.github.com/its-a-feature/1a34f597fb30985a2742bb16116e74e0)
+- [4] [Come to the Dark Side, We Have Apples: Turning macOS Management Evil](https://www.youtube.com/watch?v=pOQOh07eMxY)
+- [5] [OBTS v3.0: "An Attackers Perspective on Jamf Configurations" - Luke Roberts / Calum Hall](https://www.youtube.com/watch?v=ju1IYWUv4ZA)
+- [6] [Active Directory Discovery with a Mac - its-a-feature](https://its-a-feature.github.io/posts/2018/01/Active-Directory-Discovery-with-a-Mac/)
+- [7] [Apple — Managing certificates for device management services and devices](https://developer.apple.com/documentation/devicemanagement/managing-certificates-for-device-management-services-and-devices)
+- [8] [Apple — Use configuration profiles on Mac](https://support.apple.com/en-gb/guide/mac-help/mh35561/mac)
+- [9] [Apple — Deploying device management enrollment profiles](https://developer.apple.com/documentation/devicemanagement/deploying-device-management-enrollment-profiles)
+- [10] [Apple — Package declaration](https://developer.apple.com/documentation/devicemanagement/package)
+- [11] [Apple — Installing packages](https://developer.apple.com/documentation/devicemanagement/installing-packages)
+- [12] [Apple — Identities](https://developer.apple.com/documentation/security/identities)
 {{#include ../../banners/hacktricks-training.md}}
-
-

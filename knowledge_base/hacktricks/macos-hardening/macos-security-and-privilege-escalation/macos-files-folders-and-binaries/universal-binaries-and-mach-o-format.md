@@ -4,9 +4,9 @@
 
 ## Basic Information
 
-Mac OS binaries usually are compiled as **universal binaries**. A **universal binary** can **support multiple architectures in the same file**.
+macOS uses the **Mach-O** executable format. A **universal**, or fat, binary contains multiple architecture-specific Mach-O slices in one file. Apple's open-source `fat.h` and `loader.h` headers define the structures and constants described on this page. <sup>[[5]](#references)</sup>
 
-These binaries follows the **Mach-O structure** which is basically compased of:
+A Mach-O image is composed of:
 
 - Header
 - Load Commands
@@ -83,7 +83,24 @@ for A in $(lipo -archs "$BIN"); do
 done
 ```
 
-Recent macOS SDKs also expose helpers such as `macho_for_each_slice()` and `macho_best_slice()` in `<mach-o/utils.h>`. The latter is handy to emulate what dyld/kernel would load, but scanners should still iterate every slice to avoid missing arch-specific content.
+Recent macOS SDKs also expose `macho_for_each_slice()` and `macho_best_slice()` in `<mach-o/utils.h>`. On Apple Silicon, `macho_best_slice()` could incorrectly return `EBADARCH` for a runnable third-party `arm64` binary before macOS 15; the API was corrected in macOS 15. Use `macho_for_each_slice()` or `lipo -archs` to inventory every slice instead of treating a failed best-slice lookup as proof that no slice can run.<sup>[[1]](#references)[[7]](#references)</sup>
+
+### Compare code signatures across slices
+
+Each architecture in a universal binary has its own CodeDirectory and CDHash. When auditing a signed executable or privileged helper, inspect the **signature of each slice**. A different CDHash is normal; compare the signing identity, CodeDirectory flags and entitlements instead.<sup>[[8]](#references)</sup>
+
+For policies that match a CDHash, one hash identifies only one architecture-specific execution path. Apple recommends enumerating slices and using `codesign --arch` to inspect each one.<sup>[[9]](#references)</sup>
+
+```bash
+BIN=/path/to/executable
+for A in $(lipo -archs "$BIN"); do
+  printf "\n== %s ==\n" "$A"
+  codesign -dvvv --arch "$A" "$BIN" 2>&1
+  codesign -d --entitlements - --arch "$A" "$BIN"
+done
+```
+
+For the signature structure and validation details, see [macOS Code Signing](../macos-security-protections/macos-code-signing.md).
 
 ## **Mach-O Header**
 
@@ -128,7 +145,7 @@ There are different file types, you can find them defined in the [**source code 
 - `MH_DYLIB`: Dynamic Libraries
 - `MH_DYLINKER`: Dynamic Linker
 - `MH_BUNDLE`: "Plugin files". Generated using -bundle in gcc and explicitly loaded by `NSBundle` or `dlopen`.
-- `MH_DYSM`: Companion `.dSym` file (file with symbols for debugging).
+- `MH_DSYM`: Companion `.dSYM` file (file with symbols for debugging).
 - `MH_KEXT_BUNDLE`: Kernel Extensions.
 
 ```bash
@@ -320,7 +337,7 @@ Load command 13
 
 
 Contains information about the **code signature of the Macho-O file**. It only contains an **offset** that **points** to the **signature blob**. This is typically at the very end of the file.\
-However, you can find some information about this section in [**this blog post**](https://davedelong.com/blog/2018/01/10/reading-your-own-entitlements/) and this [**gists**](https://gist.github.com/carlospolop/ef26f8eb9fafd4bc22e69e1a32b81da4).
+You can find more information about this section in [**this blog post**](https://davedelong.com/blog/2018/01/10/reading-your-own-entitlements/) and [**this gist**](https://gist.github.com/carlospolop/ef26f8eb9fafd4bc22e69e1a32b81da4).<sup>[[3]](#references)</sup><sup>[[4]](#references)</sup>
 
 ### **`LC_ENCRYPTION_INFO[_64]`**
 
@@ -358,7 +375,7 @@ Recent toolchains frequently store export/bind/rebase metadata in these commands
 - **`LC_DYLD_EXPORTS_TRIE`**: Compact trie with the symbols exported by the image.
 - **`LC_DYLD_CHAINED_FIXUPS`**: Per-segment fixup chains used by dyld to apply rebases and binds. On Apple Silicon this is also where you will encounter many modern authenticated pointer fixups.
 
-This metadata is very handy when reconstructing imports/exports, understanding why an `@rpath`-loaded dependency resolved the way it did, or figuring out why a hook/rebinding attempt failed on a modern `arm64e` target. `dyld_info` can also be used against **cache-only dylib paths** that do not exist as standalone files on disk, which is very handy on modern macOS where many system libraries live only in the shared cache.
+This metadata is very handy when reconstructing imports/exports, understanding why an `@rpath`-loaded dependency resolved the way it did, or figuring out why a hook/rebinding attempt failed on a modern `arm64e` target. `dyld_info` can also be used against **cache-only dylib paths** that do not exist as standalone files on disk, which is very handy on modern macOS where many system libraries live only in the shared cache.<sup>[[2]](#references)</sup>
 
 ```bash
 dyld_info -arch arm64e -exports -fixup_chains -fixup_chain_details /bin/ls
@@ -442,7 +459,17 @@ Or from the cli:
 size -m /bin/ls
 ```
 
-## Objetive-C Common Sections
+### Appended data and reverse-parsed overlays
+
+A loader can keep configuration in appended data instead of a named Mach-O section. A reverse parser then anchors itself on a trailer marker, reads a size stored immediately before it, and uses that value to locate and decrypt the preceding blob. One observed universal loader used this layout for an XOR-encrypted downloader URL:<sup>[[6]](#references)</sup>
+
+```text
+[XOR-encrypted URL][8-byte ciphertext length][SONOMAC1]
+```
+
+When reversing an unfamiliar binary, inspect bytes around recognizable end markers and trace every backward size calculation before assuming that strings or configuration must belong to a load-command section. The marker and XOR key are sample-specific; the reusable technique is the self-describing trailer.
+
+## Objective-C Common Sections
 
 In `__TEXT` segment (r-x):
 
@@ -452,13 +479,15 @@ In `__TEXT` segment (r-x):
 
 In `__DATA` segment (rw-):
 
-- `__objc_classlist`: Pointers to all Objetive-C classes
+- `__objc_classlist`: Pointers to all Objective-C classes
 - `__objc_nlclslist`: Pointers to Non-Lazy Objective-C classes
 - `__objc_catlist`: Pointer to Categories
 - `__objc_nlcatlist`: Pointer to Non-Lazy Categories
 - `__objc_protolist`: Protocols list
 - `__objc_const`: Constant data
 - `__objc_imageinfo`, `__objc_selrefs`, `objc__protorefs`...
+
+See also: [Reflective Mach-O Loading](../macos-proces-abuse/reflective-mach-o-loading.md#activating-objective-c-metadata).
 
 ## Swift
 
@@ -468,6 +497,13 @@ In `__DATA` segment (rw-):
 
 ## References
 
-- [Mach-O slices aren't as straightforward as you might think](https://objective-see.org/blog/blog_0x80.html)
-- [dyld_info(1) man page](https://keith.github.io/xcode-man-pages/dyld_info.1.html)
+- [1] [Mach-O slices aren't as straightforward as you might think](https://objective-see.org/blog/blog_0x80.html)
+- [2] [dyld_info(1) man page](https://keith.github.io/xcode-man-pages/dyld_info.1.html)
+- [3] [Reading Your Own Entitlements](https://davedelong.com/blog/2018/01/10/reading-your-own-entitlements/)
+- [4] [carlospolop/machoreader.py (gist)](https://gist.github.com/carlospolop/ef26f8eb9fafd4bc22e69e1a32b81da4)
+- [5] [Apple Open Source - Mach-O `fat.h` and `loader.h`](https://github.com/apple-oss-distributions/xnu/tree/main/EXTERNAL_HEADERS/mach-o)
+- [6] [Kaspersky Securelist - A new version of the MacSync macOS stealer targets crypto enthusiasts and developers](https://securelist.com/macsync-new-version/121383/)
+- [7] [The Art of Mac Malware, Volume 2 — Parsing Binaries](https://taomm.org/vol2/pdfs/CH%202%20Parsing%20Binaries.pdf)
+- [8] [Apple Developer — TN3126: Inside Code Signing: Hashes](https://developer.apple.com/documentation/technotes/tn3126-inside-code-signing-hashes.md)
+- [9] [Apple Developer — Allowing and denying apps and binaries](https://developer.apple.com/documentation/devicemanagement/allowing-and-denying-apps-and-binaries.md)
 {{#include ../../../banners/hacktricks-training.md}}

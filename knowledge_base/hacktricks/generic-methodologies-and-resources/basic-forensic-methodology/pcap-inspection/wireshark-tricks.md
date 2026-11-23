@@ -60,7 +60,7 @@ Under _**Statistics --> I/O Graph**_ you can find a **graph of the communication
 ### Filters
 
 Here you can find wireshark filter depending on the protocol: [https://www.wireshark.org/docs/dfref/](https://www.wireshark.org/docs/dfref/)\
-In current Wireshark use `tls.*` instead of the old `ssl.*` filter names.\
+In current Wireshark use `tls.*` instead of the old `ssl.*` filter names.<sup>[[1]](#references)</sup>\
 Other interesting filters:
 
 - `(http.request or tls.handshake.type == 1) and !(udp.port eq 1900)`
@@ -82,7 +82,19 @@ If you want to **search** for **content** inside the **packets** of the sessions
 
 ### Following multiplexed streams
 
-Recent Wireshark versions can follow `TLS`, `HTTP/2` and `QUIC` streams directly. On noisy captures this is usually faster than only using `Follow TCP Stream`, especially when several requests share the same connection.
+Wireshark can follow `TLS`, `HTTP/2`, and `QUIC` streams directly. Its HTTP/2 and QUIC dialogs expose connection and substream selectors, which helps isolate multiplexed streams that share the same lower-level connection.<sup>[[4]](#references)</sup>
+
+With session keys available, first identify the request's stream ID, then follow that substream instead of the whole TCP or UDP conversation. The `0,1` example selects HTTP/2 stream ID 1 on TCP stream 0; for QUIC use `follow,quic,utf-8,<connection-number>,<stream-id>`. Following only a five-tuple can mix independent requests or miss a QUIC connection after migration.<sup>[[6]](#references)[[7]](#references)[[9]](#references)</sup>
+
+```bash
+tshark -r capture.pcapng -o tls.keylog_file:keys.log \
+  -Y 'http2.headers.authority || http3.headers.authority' -T fields \
+  -e tcp.stream -e http2.streamid -e quic.connection.number \
+  -e quic.stream.stream_id -e http2.headers.authority \
+  -e http3.headers.authority
+tshark -r capture.pcapng -o tls.keylog_file:keys.log \
+  -q -z 'follow,http2,utf-8,0,1'
+```
 
 ### Free pcap labs
 
@@ -105,7 +117,7 @@ If the capture is mostly encrypted, adding these fields as columns will speed up
 - `tls.handshake.ja3`
 - `tls.handshake.ja4` (Wireshark 4.2+)
 
-This lets you cluster sessions by hostname, ALPN (`http/1.1`, `h2`, `h3`, etc.) and client fingerprint even when the payload itself stays encrypted. For decrypted HTTP/2 and HTTP/3 captures, it is also useful to add `http2.header.value` or `http3.headers.header.value` as columns and pivot on paths, authorities and other interesting metadata.
+This lets you cluster sessions by hostname, ALPN (`http/1.1`, `h2`, `h3`, etc.) and client fingerprint even when the payload itself stays encrypted. For decrypted HTTP/2 and HTTP/3 captures, it is also useful to add `http2.header.value` or `http3.headers.header.value` as columns and pivot on paths, authorities and other interesting metadata.<sup>[[2]](#references)[[5]](#references)[[6]](#references)[[7]](#references)</sup>
 
 ```bash
 tshark -r capture.pcapng -Y "tls.handshake.type == 1" -T fields \
@@ -113,6 +125,26 @@ tshark -r capture.pcapng -Y "tls.handshake.type == 1" -T fields \
   -e tls.handshake.extensions_server_name \
   -e tls.handshake.extensions_alpn_str \
   -e tls.handshake.ja3 -e tls.handshake.ja4
+```
+
+### ECH: do not mistake the outer SNI for the origin
+
+Encrypted ClientHello (ECH) can place a public cover name in the visible outer SNI while encrypting the inner name. Therefore, an SNI-only domain inventory can attribute ECH traffic to the wrong origin. The ECH extension alone is not proof that ECH succeeded: clients can send a GREASE ECH extension. On Wireshark 4.2+, find outer ECH offers with the following filter and treat the reported SNI as a cover candidate, not the requested site.<sup>[[5]](#references)[[8]](#references)</sup>
+
+```bash
+tshark -r capture.pcapng \
+  -Y 'tls.handshake.type == 1 && tls.ech.client_hello_type == 0' \
+  -T fields -e frame.number -e ip.dst \
+  -e tls.handshake.extensions_server_name -e tls.ech.config_id
+```
+
+If you have the matching client session keys, inspect the decrypted HTTP authority/Host instead of inferring the origin from outer SNI. Without the keys, check other captured origin evidence, such as plaintext DNS, but do not equate the outer SNI with the hidden name.<sup>[[1]](#references)[[6]](#references)[[7]](#references)[[8]](#references)</sup>
+
+```bash
+tshark -r capture.pcapng -o tls.keylog_file:keys.log \
+  -Y 'http.host || http2.headers.authority || http3.headers.authority' \
+  -T fields -e ip.dst -e http.host \
+  -e http2.headers.authority -e http3.headers.authority
 ```
 
 ## Identifying local hostnames
@@ -129,6 +161,8 @@ In current Wireshark instead of `bootp` you need to search for `DHCP`
 
 ## Decrypting TLS
 
+Wi-Fi link-layer decryption is separate from TLS session decryption; see [Wi-Fi PCAP analysis](wifi-pcap-analysis.md) for its key and handshake prerequisites.
+
 ### Decrypting https traffic with server private key
 
 _edit > preferences > protocols > tls >_
@@ -137,11 +171,11 @@ _edit > preferences > protocols > tls >_
 
 Press _Edit_ and add all the data of the server and the private key (_IP, Port, Protocol, Key file and password_)
 
-This method only works in a limited number of cases. For current TLS 1.3 / ECDHE traffic, the session key log method below is usually the practical option.
+This method only works in a limited number of cases. For current TLS 1.3 / ECDHE traffic, the session key log method below is usually the practical option.<sup>[[1]](#references)</sup>
 
 ### Decrypting https traffic with symmetric session keys
 
-Both Firefox and Chrome have the capability to log TLS session keys, which can be used with Wireshark to decrypt TLS traffic. This allows for in-depth analysis of secure communications. More details on how to perform this decryption can be found in a guide at [Red Flag Security](https://redflagsecurity.net/2019/03/10/decrypting-tls-wireshark/). This is also the normal route for decrypting modern TLS 1.3 and QUIC/HTTP/3 captures.
+Both Firefox and Chrome have the capability to log TLS session keys, which can be used with Wireshark to decrypt TLS traffic. This allows for in-depth analysis of secure communications. More details on how to perform this decryption can be found in a guide at [Red Flag Security](https://redflagsecurity.net/2019/03/10/decrypting-tls-wireshark/).<sup>[[3]](#references)</sup> This is also the normal route for decrypting modern TLS 1.3 and QUIC/HTTP/3 captures.<sup>[[2]](#references)</sup>
 
 To detect this search inside the environment for the variable `SSLKEYLOGFILE`
 
@@ -149,7 +183,7 @@ A file of shared keys will look like this:
 
 ![Decrypting https traffic with server private key - Decrypting https traffic with symmetric session keys: A file of shared keys will look like this](<../../../images/image (820).png>)
 
-If the capture is `pcapng`, check whether it already contains embedded decryption secrets before hunting the host filesystem:
+If the capture is `pcapng`, check whether it already contains embedded decryption secrets before hunting the host filesystem:<sup>[[1]](#references)</sup>
 
 ```bash
 editcap --extract-secrets capture.pcapng tls-secrets.txt
@@ -192,9 +226,14 @@ f.close()
 
 ## References
 
-- [Wireshark TLS wiki](https://wiki.wireshark.org/TLS)
-- [Decrypting and parsing HTTP/3 traffic in Wireshark](https://blog.elmo.sg/posts/parsing-decrypted-quic-traffic-in-wireshark/)
+- [1] [Wireshark TLS wiki](https://wiki.wireshark.org/TLS)
+- [2] [Decrypting and parsing HTTP/3 traffic in Wireshark](https://blog.elmo.sg/posts/parsing-decrypted-quic-traffic-in-wireshark/)
+- [3] [Decrypting TLS Browser Traffic With Wireshark – The Easy Way!](https://redflagsecurity.net/2019/03/10/decrypting-tls-wireshark/)
+- [4] [Following Protocol Streams](https://www.wireshark.org/docs/wsug_html_chunked/ChAdvFollowStreamSection.html)
+- [5] [Display Filter Reference: Transport Layer Security](https://www.wireshark.org/docs/dfref/t/tls.html)
+- [6] [Display Filter Reference: HyperText Transfer Protocol 2](https://www.wireshark.org/docs/dfref/h/http2.html)
+- [7] [Display Filter Reference: Hypertext Transfer Protocol Version 3](https://www.wireshark.org/docs/dfref/h/http3.html)
+- [8] [RFC 9849: TLS Encrypted Client Hello](https://www.rfc-editor.org/rfc/rfc9849.html)
+- [9] [TShark manual](https://www.wireshark.org/docs/man-pages/tshark.html)
 
 {{#include ../../../banners/hacktricks-training.md}}
-
-

@@ -4,13 +4,15 @@
 
 ## POSIX permissions combinations
 
-Permissions in a **directory**:
+For a **directory**, the three permission bits mean something different from what they mean on a regular file. `chmod(1)` calls the execute bit "**search**" when it is applied to a directory:<sup>[[2]](#references)</sup>
 
-- **read** - you can **enumerate** the directory entries
-- **write** - you can **delete/write** **files** in the directory and you can **delete empty folders**.
-  - But you **cannot delete/modify non-empty folders** unless you have write permissions over it.
-  - You **cannot modify the name of a folder** unless you own it.
-- **execute** - you are **allowed to traverse** the directory - if you don’t have this right, you can’t access any files inside it, or in any subdirectories.
+> `0100` For files, allow execution by owner. For directories, allow the owner to **search** in the directory.
+
+- **read** - you can **enumerate** the directory entries (list the names).
+- **write** - you can **create, rename and delete entries** in the directory. Note this is a property of the *containing* directory, not of the file: you can delete a file you cannot read or write, as long as you can write its parent directory.
+  - To delete a **subdirectory** it must be empty, which in turn requires enough rights to remove everything inside it.
+  - If the directory has the **sticky bit** (`S_ISVTX`, like `/tmp`) this is restricted — POSIX states that a process may then remove or rename files in it only if it owns the file, owns the directory, or has appropriate privileges.<sup>[[1]](#references)</sup>
+- **execute / search** - you are **allowed to traverse** the directory. Pathname resolution locates each component "in the directory specified by its predecessor", so **losing search rights on any single component of the path prefix makes everything below it unreachable by path**, even if the leaf file itself is world-readable.<sup>[[1]](#references)</sup>
 
 ### Dangerous Combinations
 
@@ -22,11 +24,25 @@ Permissions in a **directory**:
 
 With any of the previous combinations, an attacker could **inject** a **sym/hard link** the expected path to obtain a privileged arbitrary write.
 
-### Folder root R+X Special case
+### Folder root R+X special case
 
-If there are files in a **directory** where **only root has R+X access**, those are **not accessible to anyone else**. So a vulnerability allowing to **move a file readable by a user**, that cannot be read because of that **restriction**, from this folder **to a different one**, could be abuse to read these files.
+This falls straight out of the pathname-resolution rule above. If a **directory only grants R+X to root**, the files inside it are unreachable *by path* for everybody else — but the **files' own permission bits may still be permissive**. The directory is the only thing standing in the way.
 
-Example in: [https://theevilbit.github.io/posts/exploiting_directory_permissions_on_macos/#nix-directory-permissions](https://theevilbit.github.io/posts/exploiting_directory_permissions_on_macos/#nix-directory-permissions)
+So any primitive that lets you get the file **out of that directory** — a privileged process that **moves/renames/copies** an attacker-chosen path into a location you *can* traverse — turns into an arbitrary read, without ever needing to defeat the file's own mode:
+
+```bash
+# Reproduce the primitive locally
+sudo mkdir -p /tmp/locked && sudo chmod 700 /tmp/locked
+sudo sh -c 'echo secret > /tmp/locked/data.txt; chmod 644 /tmp/locked/data.txt'
+
+ls -l /tmp/locked/data.txt   # Permission denied: cannot even stat through the directory
+cat /tmp/locked/data.txt     # Permission denied
+
+# The file itself is mode 644 - only the parent directory's search bit blocks you.
+sudo ls -l /tmp/locked/
+```
+
+Look for privileged file movers (installers, log rotators, crash/diagnostic collectors, backup and "export" features) that accept a source path from a lower-privileged user.
 
 ## Symbolic Link / Hard Link
 
@@ -38,7 +54,14 @@ Check in the other sections where an attacker could **abuse an arbitrary write t
 
 ### Open `O_NOFOLLOW`
 
-The flag `O_NOFOLLOW` when used by the function `open` won't follow a symlink in the last path component, but it will follow the rest of the path. The correct way to prevent following symlinks in the path is by using the flag `O_NOFOLLOW_ANY`.
+Per [`open(2)`](https://keith.github.io/xcode-man-pages/open.2.html): *"If `O_NOFOLLOW` is used in the mask and the target file passed to `open()` is a symbolic link then the `open()` will fail."* Only the **final** component is checked — every **intermediate** component is still resolved and followed. So a developer who "protected" a write with `O_NOFOLLOW` can still be attacked by planting a symlink on any **parent directory** of the target path.<sup>[[3]](#references)</sup>
+
+The same man page documents the flags that actually close that gap:<sup>[[3]](#references)</sup>
+
+- **`O_NOFOLLOW_ANY`** — *"if ... any component of the path passed to `open()` is a symbolic link then the `open()` will fail."*
+- **`O_RESOLVE_BENEATH`** — *"if ... the specified path resolution escapes the directory associated with the fd then the `openat()` will fail."*
+
+Otherwise, `openat()` relative to a directory FD you already validated, or `realpath()` + re-validation, are the remaining ways to stop mid-path symlink swaps.
 
 ## .fileloc
 
@@ -62,11 +85,25 @@ Example:
 
 ### Leak FD (no `O_CLOEXEC`)
 
-If a call to `open` doesn't have the flag `O_CLOEXEC` the file descriptor will be inherited by the child process. So, if a privileged process opens a privileged file and executes a process controlled by the attacker, the attacker will **inherit the FD over the privielged file**.
+If a call to `open` doesn't have the flag `O_CLOEXEC` the file descriptor will be inherited by the child process. So, if a privileged process opens a privileged file and executes a process controlled by the attacker, the attacker will **inherit the FD over the privileged file**.
 
-If you can make a **process open a file or a folder with high privileges**, you can abuse **`crontab`** to open a file in `/etc/sudoers.d` with **`EDITOR=exploit.py`**, so the `exploit.py` will get the FD to the file inside `/etc/sudoers` and abuse it.
+The canonical example is the **`DYLD_PRINT_TO_FILE` LPE in OS X 10.10** ([SektionEins](https://www.sektioneins.de/en/blog/15-07-07-dyld_print_to_file_lpe.html)):<sup>[[4]](#references)</sup>
 
-For example: [https://youtu.be/f1HA5QhLQ7Y?t=21098](https://youtu.be/f1HA5QhLQ7Y?t=21098), code: https://github.com/gergelykalman/CVE-2023-32428-a-macOS-LPE-via-MallocStackLogging
+- `dyld` honoured `DYLD_PRINT_TO_FILE=/path` even in **restricted (suid root) binaries**, because that particular variable was parsed outside of `processDyldEnvironmentVariable()`.
+- It did `open(loggingPath, O_WRONLY | O_CREAT | O_APPEND, 0644)`, so it **created a root-owned file at an arbitrary path**.
+- The FD was **never closed and had no close-on-exec flag**, so every child of the suid binary inherited a **writable FD to a root-owned file**.
+- Running e.g. `DYLD_PRINT_TO_FILE=/etc/target suid_binary` and then reading the inherited FD number in the child gave arbitrary root-owned writes; `fcntl(fd, F_SETFL, 0)` even cleared `O_APPEND` to allow overwriting instead of appending.
+
+The same shape shows up whenever a privileged process opens a file **before** `exec`ing something you control (helper tools, `crontab`-style editors invoked through `$EDITOR`, log/debug files opened from an env-var path...). Enumerate the FDs you inherited with:
+
+```bash
+# From inside the child process
+ls -l /dev/fd/
+# or
+lsof -p $$
+```
+
+Anything above `2` that points to a file you cannot open yourself is an arbitrary-write (or arbitrary-read) primitive.
 
 ## Avoid quarantine xattrs tricks
 
@@ -90,90 +127,34 @@ ls -lO /tmp/asd
 # check the "uchg" in the output
 ```
 
-### defvfs mount
+### File systems without xattr support
 
-A **devfs** mount **doesn't support xattr**, more info in [**CVE-2023-32364**](https://gergelykalman.com/CVE-2023-32364-a-macOS-sandbox-escape-by-mounting.html)
+Not every file system macOS can mount stores **extended attributes** natively. HFS+ and APFS do; **FAT32, exFAT and (most) NFS mounts do not** — macOS emulates them by writing an **AppleDouble** side file named `._<filename>` ([The Eclectic Light Company](https://eclecticlight.co/2018/01/12/which-file-systems-and-cloud-services-preserve-extended-attributes/)).<sup>[[5]](#references)</sup>
 
-```bash
-mkdir /tmp/mnt
-mount_devfs -o noowners none "/tmp/mnt"
-chmod 777 /tmp/mnt
-mkdir /tmp/mnt/lol
-xattr -w com.apple.quarantine "" /tmp/mnt/lol
-xattr: [Errno 1] Operation not permitted: '/tmp/mnt/lol'
-```
-
-### writeextattr ACL
-
-This ACL prevents from adding `xattrs` to the file
+That matters for quarantine, because the xattr only survives if it can actually be written **and read back** from the same volume:
 
 ```bash
-rm -rf /tmp/test*
-echo test >/tmp/test
-chmod +a "everyone deny write,writeattr,writeextattr,writesecurity,chown" /tmp/test
-ls -le /tmp/test
-ditto -c -k test test.zip
-# Download the zip from the browser and decompress it, the file should be without a quarantine xattr
-
-cd /tmp
-echo y | rm test
-
-# Decompress it with ditto
-ditto -x -k --rsrc test.zip .
-ls -le /tmp/test
-
-# Decompress it with open (if sandboxed decompressed files go to the Downloads folder)
-open test.zip
-sleep 1
-ls -le /tmp/test
+# Check whether a mount point round-trips xattrs at all
+xattr -w com.apple.quarantine "0081;00000000;test;" /Volumes/SOMEUSB/file
+xattr -p com.apple.quarantine /Volumes/SOMEUSB/file
+ls -a /Volumes/SOMEUSB/          # look for the ._file AppleDouble companion
 ```
 
-### **com.apple.acl.text xattr + AppleDouble**
+If the volume is later read on a path that ignores the `._` companion (or the companion is stripped/deleted), the file arrives **without a quarantine flag** — and an unquarantined `.app` is enough to escape the App Sandbox, as covered in [macOS Sandbox Debug & Bypass](../macos-sandbox/macos-sandbox-debug-and-bypass/README.md#bypassing-quarantine-attribute).
 
-**AppleDouble** file format copies a file including its ACEs.
+### writeextattr ACL and AppleDouble quarantine behavior
 
-In the [**source code**](https://opensource.apple.com/source/Libc/Libc-391/darwin/copyfile.c.auto.html) it's possible to see that the ACL text representation stored inside the xattr called **`com.apple.acl.text`** is going to be set as ACL in the decompressed file. So, if you compressed an application into a zip file with **AppleDouble** file format with an ACL that prevents other xattrs to be written to it... the quarantine xattr wasn't set into de application:
-
-Check the [**original report**](https://www.microsoft.com/en-us/security/blog/2022/12/19/gatekeepers-achilles-heel-unearthing-a-macos-vulnerability/) for more information.
-
-To replicate this we first need to get the correct acl string:
-
-```bash
-# Everything will be happening here
-mkdir /tmp/temp_xattrs
-cd /tmp/temp_xattrs
-
-# Create a folder and a file with the acls and xattr
-mkdir del
-mkdir del/test_fold
-echo test > del/test_fold/test_file
-chmod +a "everyone deny write,writeattr,writeextattr,writesecurity,chown" del/test_fold
-chmod +a "everyone deny write,writeattr,writeextattr,writesecurity,chown" del/test_fold/test_file
-ditto -c -k del test.zip
-
-# uncomporess to get it back
-ditto -x -k --rsrc test.zip .
-ls -le test
-```
-
-(Note that even if this works the sandbox write the quarantine xattr before)
-
-Not really needed but I leave it there just in case:
-
-
-{{#ref}}
-macos-xattr-acls-extra-stuff.md
-{{#endref}}
+For the `writeextattr` ACL example, the `com.apple.acl.text` AppleDouble mechanism, and the sidecar construction and validation steps, see [AppleDouble/ACL quarantine bypass reproduction](macos-appledouble-acl-quarantine-bypass.md).
 
 ## Bypass signature checks
 
 ### Bypass platform binaries checks
 
-Some security checks check if the binary is a **platform binary**, for example to allow to connect to a XPC service. However, as exposed in on bypass in https://jhftss.github.io/A-New-Era-of-macOS-Sandbox-Escapes/ it's possible to bypass this check by getting a platform binary (like /bin/ls) and inject the exploit via dyld using en env variable `DYLD_INSERT_LIBRARIES`.
+Some security checks check if the binary is a **platform binary**, for example to allow to connect to a XPC service. However, as exposed in on bypass in https://jhftss.github.io/A-New-Era-of-macOS-Sandbox-Escapes/ it's possible to bypass this check by getting a platform binary (like /bin/ls) and inject the exploit via dyld using en env variable `DYLD_INSERT_LIBRARIES`.<sup>[[7]](#references)</sup>
 
 ### Bypass flags `CS_REQUIRE_LV` and `CS_FORCED_LV`
 
-It's possible for an executing binary to modify it's own flags to bypass checks with a code such as:
+It's possible for an executing binary to modify it's own flags to bypass checks with a code such as:<sup>[[7]](#references)</sup>
 
 ```c
 // Code from https://jhftss.github.io/A-New-Era-of-macOS-Sandbox-Escapes/
@@ -317,7 +298,7 @@ You can also write files in **`/etc/paths.d`** to load new folders into the `PAT
 
 ### cups-files.conf
 
-This technique was used in [this writeup](https://www.kandji.io/blog/macos-audit-story-part1).
+This technique was used in [this writeup](https://www.kandji.io/blog/macos-audit-story-part1).<sup>[[8]](#references)</sup>
 
 Create the file `/etc/cups/cups-files.conf` with the following content:
 
@@ -339,19 +320,26 @@ It's posisble to escape the macOS sandbox with a FS arbitrary write. For some ex
 
 ## Generate writable files as other users
 
-This will generate a file that belongs to root that is writable by me ([**code from here**](https://github.com/gergelykalman/brew-lpe-via-periodic/blob/main/brew_lpe.sh)). This might also work as privesc:
+A very common privesc primitive is making a **privileged process create a file for you** in a directory you control, and then keeping **write access** to that file. Two ingredients are needed:
+
+1. A directory you own (or where you can set an **inheritable ACL**), so anything created inside inherits your permissions.
+2. A privileged/`suid` process that can be told **where** to create a file — typically through a debug/logging environment variable, a config file, or a helper's XPC API.
+
+The **inheritable ACL** part is what makes the created file writable by you even though it is owned by another user. The `file_inherit` / `directory_inherit` inheritance flags are documented in [`chmod(1)`](https://keith.github.io/xcode-man-pages/chmod.1.html):<sup>[[2]](#references)</sup>
 
 ```bash
-DIRNAME=/usr/local/etc/periodic/daily
-
+DIRNAME=/tmp/inherit_test
 mkdir -p "$DIRNAME"
-chmod +a "$(whoami) allow read,write,append,execute,readattr,writeattr,readextattr,writeextattr,chown,delete,writesecurity,readsecurity,list,search,add_file,add_subdirectory,delete_child,file_inherit,directory_inherit," "$DIRNAME"
 
-MallocStackLogging=1 MallocStackLoggingDirectory=$DIRNAME MallocStackLoggingDontDeleteStackLogFile=1 top invalidparametername
+# file_inherit + directory_inherit => everything created inside is writable by me
+chmod +a "$(whoami) allow read,write,append,execute,readattr,writeattr,readextattr,writeextattr,chown,delete,writesecurity,readsecurity,list,search,add_file,add_subdirectory,delete_child,file_inherit,directory_inherit" "$DIRNAME"
 
-FILENAME=$(ls "$DIRNAME")
-echo $FILENAME
+ls -lde "$DIRNAME"   # confirm the ACE is present
 ```
+
+Now any file that a privileged process creates inside `$DIRNAME` is **writable by you**. If that directory is also a location that is later **executed as root** (`/etc/periodic/*`, `/etc/cron.d`, `/etc/sudoers.d`, a LaunchDaemon directory...), this is a direct root escalation. See the [Sudoers File](#sudoers-file) and [cups-files.conf](#cups-filesconf) sections above for what to write once you have the file.
+
+For a full worked example of the "env variable makes a root process create a file, and the FD leaks to you" chain, see [Leak FD (no `O_CLOEXEC`)](#leak-fd-no-o_cloexec) above.
 
 ## POSIX Shared Memory
 
@@ -459,14 +447,18 @@ int main() {
 
 This feature is particularly useful for preventing certain classes of security vulnerabilities such as **unauthorized file access** or **race conditions**. These vulnerabilities occurs when for example a thread is accessing a file description giving **another vulnerable thread access over it** or when a file descriptor is **inherited** by a vulnerable child process. Some functions related to this functionality are:
 
-- `guarded_open_np`: Opend a FD with a guard
+- `guarded_open_np`: Opens a file descriptor with a guard
 - `guarded_close_np`: Close it
 - `change_fdguard_np`: Change guard flags on a descriptor (even removing the guard protection)
 
 ## References
 
-- [https://theevilbit.github.io/posts/exploiting_directory_permissions_on_macos/](https://theevilbit.github.io/posts/exploiting_directory_permissions_on_macos/)
+- [1] [POSIX.1-2024 — Base Definitions, Ch. 4 (File Access Permissions, Directory Protection, Pathname Resolution)](https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap04.html)
+- [2] [`chmod(1)` man page](https://keith.github.io/xcode-man-pages/chmod.1.html) (directory search/execute bit, ACL inheritance flags)
+- [3] [`open(2)` man page](https://keith.github.io/xcode-man-pages/open.2.html) (`O_NOFOLLOW`, `O_NOFOLLOW_ANY`, `O_RESOLVE_BENEATH`)
+- [4] [SektionEins - OS X 10.10 DYLD_PRINT_TO_FILE Local Privilege Escalation](https://www.sektioneins.de/en/blog/15-07-07-dyld_print_to_file_lpe.html) (leaked FD without close-on-exec)
+- [5] [The Eclectic Light Company - Which file systems and cloud services preserve extended attributes?](https://eclecticlight.co/2018/01/12/which-file-systems-and-cloud-services-preserve-extended-attributes/)
+- [7] [Mickey (Jhftss) - A New Era of macOS Sandbox Escapes](https://jhftss.github.io/A-New-Era-of-macOS-Sandbox-Escapes/)
+- [8] [Kandji - Uncovering Apple Vulnerabilities: The diskarbitrationd and storagekitd Audit Story Part 1](https://www.kandji.io/blog/macos-audit-story-part1)
 
 {{#include ../../../../banners/hacktricks-training.md}}
-
-

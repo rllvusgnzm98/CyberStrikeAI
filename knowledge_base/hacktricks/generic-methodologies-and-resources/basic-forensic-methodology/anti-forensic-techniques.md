@@ -75,6 +75,16 @@ These distros are **executed inside the RAM** memory. The only way to detect the
 
 [https://github.com/Claudio-C/awesome-data-sanitization](https://github.com/Claudio-C/awesome-data-sanitization)
 
+### Delayed Windows self-deletion
+
+A running Windows image may be locked while its process is active. A process can hand deletion to a child `cmd.exe`, use `choice` as a timer, and exit before the shell reaches `del`. The delay lets the original process release its image handle; quoting the full path is necessary when it contains spaces.<sup>[[6]](#references)[[7]](#references)[[8]](#references)</sup>
+
+```cmd
+cmd.exe /C choice /C Y /N /D Y /T 6 ^>nul ^& Del /F /Q "<full-path-of-current-executable>"
+```
+
+When this string is supplied directly as the argument to `cmd.exe` rather than typed from another interactive `cmd` prompt, use `&` instead of `^&` and `>nul` instead of `^>nul`. This removes the directory entry; it is **not secure erasure** and does not remove execution, task, filesystem-journal, or other forensic traces. Hunt for short-lived `cmd.exe` children whose command line combines `choice /T`, `Del`, and the parent's image path.<sup>[[6]](#references)[[7]](#references)[[8]](#references)</sup>
+
 ## Windows Configuration
 
 It's possible to disable several windows logging methods to make the forensics investigation much harder.
@@ -178,7 +188,7 @@ Defenders should monitor for changes to those registry keys and high-volume remo
 
 Endpoint security products rely heavily on ETW. A popular 2024 evasion method is to
 patch `ntdll!EtwEventWrite`/`EtwEventWriteFull` in memory so every ETW call returns `STATUS_SUCCESS`
-without emitting the event:
+without emitting the event:<sup>[[5]](#references)</sup>
 
 ```c
 // 0xC3 = RET on x64
@@ -189,7 +199,7 @@ WriteProcessMemory(GetCurrentProcess(),
 ```
 
 Public PoCs (e.g. `EtwTiSwallow`) implement the same primitive in PowerShell or C++.  
-Because the patch is **process-local**, EDRs running inside other processes may miss it.  
+Because the patch is **process-local**, EDRs running inside other processes may miss it.<sup>[[5]](#references)</sup>
 Detection: compare `ntdll` in memory vs. on disk, or hook before user-mode.
 
 ### Alternate Data Streams (ADS) Revival
@@ -213,14 +223,14 @@ by investigators to recover the payload.
 Bring-Your-Own-Vulnerable-Driver is now routinely used for **anti-forensics** in ransomware
 intrusions.  
 The open-source tool **AuKill** loads a signed but vulnerable driver (`procexp152.sys`) to
-suspend or terminate EDR and forensic sensors **before encryption & log destruction**:
+suspend or terminate EDR and forensic sensors **before encryption & log destruction**:<sup>[[1]](#references)</sup>
 
 ```cmd
 AuKill.exe -e "C:\\Program Files\\Windows Defender\\MsMpEng.exe"
 AuKill.exe -k CrowdStrike
 ```
 
-The driver is removed afterwards, leaving minimal artifacts.  
+The driver is removed afterwards, leaving minimal artifacts.<sup>[[1]](#references)</sup>  
 Mitigations: enable the Microsoft vulnerable-driver blocklist (HVCI/SAC),
 and alert on kernel-service creation from user-writable paths.
 
@@ -229,9 +239,9 @@ and alert on kernel-service creation from user-writable paths.
 ## Linux Anti-Forensics: Self-Patching and Cloud C2 (2023–2025)
 
 ### Self‑patching compromised services to reduce detection (Linux)
-Adversaries increasingly “self‑patch” a service right after exploiting it to both prevent re‑exploitation and suppress vulnerability‑based detections. The idea is to replace vulnerable components with the latest legitimate upstream binaries/JARs, so scanners report the host as patched while persistence and C2 remain.
+Adversaries increasingly “self‑patch” a service right after exploiting it to both prevent re‑exploitation and suppress vulnerability‑based detections. The idea is to replace vulnerable components with the latest legitimate upstream binaries/JARs, so scanners report the host as patched while persistence and C2 remain.<sup>[[3]](#references)</sup>
 
-Example: Apache ActiveMQ OpenWire RCE (CVE‑2023‑46604)
+Example: Apache ActiveMQ OpenWire RCE (CVE‑2023‑46604).<sup>[[3]](#references)[[4]](#references)</sup>
 - Post‑exploitation, attackers fetched legitimate JARs from Maven Central (repo1.maven.org), deleted vulnerable JARs in the ActiveMQ install, and restarted the broker.
 - This closed the initial RCE while maintaining other footholds (cron, SSH config changes, separate C2 implants).
 
@@ -264,7 +274,7 @@ Forensic/hunting tips
 - Change management: validate who applied the “patch” and why, not only that a patched version is present.
 
 ### Cloud‑service C2 with bearer tokens and anti‑analysis stagers
-Observed tradecraft combined multiple long‑haul C2 paths and anti‑analysis packaging:
+Observed tradecraft combined multiple long‑haul C2 paths and anti‑analysis packaging:<sup>[[3]](#references)</sup>
 - Password‑protected PyInstaller ELF loaders to hinder sandboxing and static analysis (e.g., encrypted PYZ, temporary extraction under `/_MEI*`).
   - Indicators: `strings` hits such as `PyInstaller`, `pyi-archive`, `PYZ-00.pyz`, `MEIPASS`.
   - Runtime artifacts: extraction to `/tmp/_MEI*` or custom `--runtime-tmpdir` paths.
@@ -275,7 +285,7 @@ Observed tradecraft combined multiple long‑haul C2 paths and anti‑analysis p
   - Host IOCs: `cloudflared` processes/units, config at `~/.cloudflared/*.json`, outbound 443 to Cloudflare edges.
 
 ### Persistence and “hardening rollback” to maintain access (Linux examples)
-Attackers frequently pair self‑patching with durable access paths:
+Attackers frequently pair self‑patching with durable access paths:<sup>[[3]](#references)</sup>
 - Cron/Anacron: edits to the `0anacron` stub in each `/etc/cron.*/` directory for periodic execution.
   - Hunt:
     ```bash
@@ -301,17 +311,43 @@ Attackers frequently pair self‑patching with durable access paths:
 
 Defenders should correlate these artifacts with external exposure and service patching events to uncover anti‑forensic self‑remediation used to hide initial exploitation.
 
-## References
+## Static embedded-shell execution
 
-- Sophos X-Ops – “AuKill: A Weaponized Vulnerable Driver for Disabling EDR” (March 2023)  
-  https://news.sophos.com/en-us/2023/03/07/aukill-a-weaponized-vulnerable-driver-for-disabling-edr
-- Red Canary – “Patching EtwEventWrite for Stealth: Detection & Hunting” (June 2024)  
-  https://redcanary.com/blog/etw-patching-detection
+A script wrapper with an embedded interpreter and command implementations can run supported shell operations inside one executable instead of launching `/bin/sh` and separate utility processes. HimitsuShell builds such a static musl binary. Unlike [SHc wrappers](../../linux-hardening/processes-crontab-systemd-dbus/cron-and-systemd-timers.md), its built-in commands do not need to start the host shell or a separate utility process. Unsupported commands can fall back to the system shell.<sup>[[9]](#references)</sup>
 
-- [Red Canary – Patching for persistence: How DripDropper Linux malware moves through the cloud](https://redcanary.com/blog/threat-intelligence/dripdropper-linux-malware/)
-- [CVE‑2023‑46604 – Apache ActiveMQ OpenWire RCE (NVD)](https://nvd.nist.gov/vuln/detail/CVE-2023-46604)
+This reduces shell-process and child-`execve` visibility.<sup>[[9]](#references)</sup> The wrapper process and its system calls remain observable through kernel tracepoints, so the project's claim of invisibility even to kernel tracing should not be taken literally.<sup>[[9]](#references)[[11]](#references)</sup>
+
+For the documented x86_64 build, keep the input named `launcher.sh` and copy it into the container before compiling. The output is `safeLauncher`:<sup>[[9]](#references)</sup>
+
+```bash
+curl -LO https://github.com/HimitsuShell/Himitsu/releases/download/v2.1.0/himitsu_core_x86_64_linux_musl.tar.gz
+docker load -i himitsu_core_x86_64_linux_musl.tar.gz
+docker run --name himitsu_core -d -it himitsu_core
+docker cp launcher.sh himitsu_core:/var/work/
+docker exec himitsu_core /var/work/compile.sh
+docker cp himitsu_core:/var/work/safeLauncher .
+```
+
+The public `compile.sh` encrypts the script with AES-256-CTR, encrypts the expiration value and intermediate keys/IVs with AES-256-CBC, converts the encrypted files into C arrays with `xxd -i`, and links them with `lib.bc` using `-static -s`. The final encryption key and IV are also embedded, so this is resistance to casual static extraction, not a secret that can never be recovered.<sup>[[10]](#references)</sup>
+
+The default LLVM passes are `-sobf` and `-sub`. Edit `/var/work/compile.sh` before building to enable documented alternatives such as control-flow flattening (`fla`) or bogus control flow (`bcf`).<sup>[[9]](#references)[[10]](#references)</sup>
+
+Test script compatibility before relying on this wrapper: the project targets POSIX shell syntax, warns that Bash/Zsh scripts may fail, and says commands outside its built-in set invoke the system shell.<sup>[[9]](#references)</sup>
+
+For analysis of flattened control flow, see [bypassing flattened control flow with a narrow execution slice](../../reversing/reversing-tools-basic-methods/#bypass-flattened-control-flow-with-a-narrow-execution-slice).
 
 {{#include ../../banners/hacktricks-training.md}}
 
+## References
 
-
+- [1] [Sophos X-Ops – AuKill: A Weaponized Vulnerable Driver for Disabling EDR (March 2023)](https://news.sophos.com/en-us/2023/03/07/aukill-a-weaponized-vulnerable-driver-for-disabling-edr)
+- [2] [Red Canary – Patching EtwEventWrite for Stealth: Detection & Hunting (June 2024)](https://redcanary.com/blog/etw-patching-detection)
+- [3] [Red Canary – Patching for persistence: How DripDropper Linux malware moves through the cloud](https://redcanary.com/blog/threat-intelligence/dripdropper-linux-malware/)
+- [4] [CVE‑2023‑46604 – Apache ActiveMQ OpenWire RCE (NVD)](https://nvd.nist.gov/vuln/detail/CVE-2023-46604)
+- [5] [Hiding Your .NET - ETW (Adam Chester / XPN)](https://blog.xpnsec.com/hiding-your-dotnet-etw/)
+- [6] [FortiGuard Labs – Uncovering a SectopRAT Variant Embedded in Legitimate Software](https://www.fortinet.com/blog/threat-research/uncovering-a-sectoprat-variant-embedded-in-legitimate-software)
+- [7] [Microsoft Learn – choice command](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/choice)
+- [8] [Microsoft Learn – del command](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/del)
+- [9] [HimitsuShell README](https://github.com/HimitsuShell/HimitsuShell)
+- [10] [HimitsuShell build script](https://github.com/HimitsuShell/HimitsuShell/blob/main/inside_container/compile.sh)
+- [11] [Linux kernel event histograms and syscall tracing](https://docs.kernel.org/trace/histogram.html)

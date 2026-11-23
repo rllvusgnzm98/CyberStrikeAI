@@ -4,7 +4,7 @@
 
 ## Basic Information
 
-The real **entrypoint** of a Mach-o binary is the dynamic linked, defined in `LC_LOAD_DYLINKER` usually is `/usr/lib/dyld`.
+The real **entrypoint** of a Mach-o binary is the dynamic linked, defined in `LC_LOAD_DYLINKER` usually is `/usr/lib/dyld`.<sup>[[3]](#references)</sup>
 
 This linker will need to locate all the executables libraries, map them in memory and link all the non-lazy libraries. Only after this process, the entry-point of the binary will be executed.
 
@@ -15,9 +15,9 @@ Of course, **`dyld`** doesn't have any dependencies (it uses syscalls and libSys
 
 ### Flow
 
-Dyld will be loaded by **`dyldboostrap::start`**, which will also load things such as the **stack canary**. This is because this function will receive in its **`apple`** argument vector this and other **sensitive** **values**.
+Dyld will be loaded by **`dyldboostrap::start`**, which will also load things such as the **stack canary**. This is because this function will receive in its **`apple`** argument vector this and other **sensitive** **values**.<sup>[[1]](#references)</sup>
 
-**`dyls::_main()`** is the entry point of dyld and it's first task is to run `configureProcessRestrictions()`, which usually restricts **`DYLD_*`** environment variables explained in:
+**`dyls::_main()`** is the entry point of dyld and it's first task is to run `configureProcessRestrictions()`, which usually restricts **`DYLD_*`** environment variables explained in:<sup>[[2]](#references)</sup>
 
 
 {{#ref}}
@@ -35,11 +35,13 @@ Once all are loaded the **initialisers** of these libraries are run. These are c
 
 Terminators are coded with **`__attribute__((destructor))`** and are located in a section flagged with `S_MOD_TERM_FUNC_POINTERS` (**`__DATA.__mod_term_func`**).
 
+See also: [Reflective Mach-O Loading](../reflective-mach-o-loading.md).
+
 ### Stubs
 
 All binaries sin macOS are dynamically linked. Therefore, they contain some stubs sections that helps the binary to jump to the correct code in different machines and context. It's dyld when the binary is executed the brain that needs to resolve these addresses (at least the non-lazy ones).
 
-Som stub sections in the binary:
+Some stub sections in the binary:
 
 - **`__TEXT.__[auth_]stubs`**: Pointers from `__DATA` sections
 - **`__TEXT.__stub_helper`**: Small code invoking dynamic linking with info on the function to call
@@ -107,10 +109,10 @@ Disassembly of section __TEXT,__stubs:
 you can see that we are **jumping to the address of the GOT**, which in this case is resolved non-lazy and will contain the address of the printf function.
 
 In other situations instead of directly jumping to the GOT, it could jump to **`__DATA.__la_symbol_ptr`** which will load a value that represents the function that it's trying to load, then jump to **`__TEXT.__stub_helper`** which jumps the **`__DATA.__nl_symbol_ptr`** which contains the address of **`dyld_stub_binder`** which takes as parameters the number of the function and an address.\
-This last function, after finding the address of the searched function writes it in the corresponding location in **`__TEXT.__stub_helper`** to avoid doing lookups in the future.
+The binder resolves the symbol and updates its **`__DATA.__la_symbol_ptr`** slot. The stub then uses that resolved pointer on later calls; it is not rewritten in `__TEXT.__stub_helper`.<sup>[[5]](#references)</sup>
 
 > [!TIP]
-> However notice taht current dyld versions load everything as non-lazy.
+> However, notice that current dyld versions load everything as non-lazy.
 
 #### Dyld opcodes
 
@@ -193,7 +195,7 @@ it's possible to see all these interesting values debugging before getting into 
 
 ## dyld_all_image_infos
 
-This is a structure exported by dyld with information about the dyld state which can be found in the [**source code**](https://opensource.apple.com/source/dyld/dyld-852.2/include/mach-o/dyld_images.h.auto.html) with information like the version, pointer to dyld_image_info array, to dyld_image_notifier, if proc is detached from shared cache, if libSystem initializer was called, pointer to dyls's own Mach header, pointer to dyld version string...
+This is a structure exported by dyld with information about the dyld state which can be found in the [**source code**](https://github.com/apple-oss-distributions/dyld/blob/dyld-852.2/include/mach-o/dyld_images.h) with information like the version, pointer to dyld_image_info array, to dyld_image_notifier, if proc is detached from shared cache, if libSystem initializer was called, pointer to dyls's own Mach header, pointer to dyld version string...<sup>[[4]](#references)</sup>
 
 ## dyld env variables
 
@@ -270,26 +272,40 @@ dyld[21623]: running initializer 0x18e59e5c0 in /usr/lib/libSystem.B.dylib
 [...]
 ```
 
+### Trace runtime library resolution
+
+For a launch you can control, trace an `@rpath` or weak-library candidate before placing a replacement dylib. `DYLD_PRINT_SEARCHING` reports paths considered by dyld, while `DYLD_PRINT_LIBRARIES` shows the images actually loaded. `DYLD_PRINT_LOADERS` distinguishes a `JustInTimeLoader` from a `PrebuiltLoader` and reports use of a prebuilt loader set.<sup>[[6]](#references)</sup>
+
+```bash
+DYLD_PRINT_SEARCHING=1 DYLD_PRINT_LOADERS=1 DYLD_PRINT_LIBRARIES=1 /path/to/binary 2>&1 | tee /tmp/dyld-search.log
+```
+
+Look for the `LC_RPATH` line identifying the image that supplied a run path, then compare `possible path(...)` candidates with `found: dylib-from-disk`, `found: dylib-from-cache`, or a rejection. A candidate path is **not** proof that the dylib loaded. The first usable disk path before the expected library is the one to test for write access and [library-validation restrictions](./#library-validation).<sup>[[7]](#references)</sup>
+
+A prebuilt loader can reuse recorded dependency information instead of repeating a full path search. Sparse search output is therefore not evidence that an image has no dependencies; inspect its load commands with `otool -l` and compare the library list.<sup>[[8]](#references)</sup> These diagnostics also require dyld's print-variable permission, so a protected target may ignore them entirely.<sup>[[2]](#references)</sup> See [Dylib Hijacking](./#dylib-hijacking) for the actual replacement-library prerequisites.
+
 ### Others
 
+Some switches below are specific to older dyld releases. Check support on the target version rather than assuming every variable still works.<sup>[[2]](#references)[[9]](#references)</sup>
+
 - `DYLD_BIND_AT_LAUNCH`: Lazy bindings are resolved with non lazy ones
-- `DYLD_DISABLE_PREFETCH`: DIsable pre-fetching of \_\_DATA and \_\_LINKEDIT content
+- `DYLD_DISABLE_PREFETCH`: Disable pre-fetching of \_\_DATA and \_\_LINKEDIT content
 - `DYLD_FORCE_FLAT_NAMESPACE`: Single-level bindings
 - `DYLD_[FRAMEWORK/LIBRARY]_PATH | DYLD_FALLBACK_[FRAMEWORK/LIBRARY]_PATH | DYLD_VERSIONED_[FRAMEWORK/LIBRARY]_PATH`: Resolution paths
-- `DYLD_INSERT_LIBRARIES`: Load an specifc library
+- `DYLD_INSERT_LIBRARIES`: Load a specific library
 - `DYLD_PRINT_TO_FILE`: Write dyld debug in a file
 - `DYLD_PRINT_APIS`: Print libdyld API calls
 - `DYLD_PRINT_APIS_APP`: Print libdyld API calls made by main
 - `DYLD_PRINT_BINDINGS`: Print symbols when bound
-- `DYLD_WEAK_BINDINGS`: Only print weak symbols when bound
+- `DYLD_PRINT_WEAK_BINDINGS` (dyld2): Print weak symbol bindings
 - `DYLD_PRINT_CODE_SIGNATURES`: Print code signature registration operations
 - `DYLD_PRINT_DOFS`: Print D-Trace object format sections as loaded
 - `DYLD_PRINT_ENV`: Print env seen by dyld
-- `DYLD_PRINT_INTERPOSTING`: Print interposting operations
+- `DYLD_PRINT_INTERPOSING`: Print interposing operations
 - `DYLD_PRINT_LIBRARIES`: Print librearies loaded
 - `DYLD_PRINT_OPTS`: Print load options
-- `DYLD_REBASING`: Print symbol rebasing operations
-- `DYLD_RPATHS`: Print expansions of @rpath
+- `DYLD_PRINT_REBASINGS` (dyld2): Print symbol rebasing operations
+- `DYLD_PRINT_RPATHS` (dyld2): Print expansions of `@rpath`
 - `DYLD_PRINT_SEGMENTS`: Print mappings of Mach-O segments
 - `DYLD_PRINT_STATISTICS`: Print timing statistics
 - `DYLD_PRINT_STATISTICS_DETAILS`: Print detailed timing statistics
@@ -298,7 +314,7 @@ dyld[21623]: running initializer 0x18e59e5c0 in /usr/lib/libSystem.B.dylib
 - `DYLD_SHARED_REGION`: "use", "private", "avoid"
 - `DYLD_USE_CLOSURES`: Enable closures
 
-It's possible to find more with someting like:
+It's possible to find more with something like:
 
 ```bash
 strings /usr/lib/dyld | grep "^DYLD_" | sort -u
@@ -310,10 +326,17 @@ Or downloading the dyld project from [https://opensource.apple.com/tarballs/dyld
 find . -type f | xargs grep strcmp| grep key,\ \" | cut -d'"' -f2 | sort -u
 ```
 
+
+
 ## References
 
-- [**\*OS Internals, Volume I: User Mode. By Jonathan Levin**](https://www.amazon.com/MacOS-iOS-Internals-User-Mode/dp/099105556X)
-
+- [1] [dyld — `dyld/dyldMain.cpp` (process startup path)](https://github.com/apple-oss-distributions/dyld/blob/main/dyld/dyldMain.cpp)
+- [2] [dyld — `dyld/DyldProcessConfig.cpp` (process/security configuration)](https://github.com/apple-oss-distributions/dyld/blob/main/dyld/DyldProcessConfig.cpp)
+- [3] [XNU — `bsd/kern/kern_exec.c` (kernel side of `execve`, loading dyld)](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_exec.c)
+- [4] [dyld — `include/mach-o/dyld_images.h` (`dyld_all_image_infos` structure)](https://github.com/apple-oss-distributions/dyld/blob/dyld-852.2/include/mach-o/dyld_images.h)
+- [5] [fishhook — lazy and non-lazy symbol pointer binding](https://github.com/meta/fishhook)
+- [6] [dyld(1) — dynamic-linker diagnostics](https://github.com/apple-oss-distributions/dyld/blob/main/doc/man/man1/dyld.1)
+- [7] [dyld — runtime library-path search](https://github.com/apple-oss-distributions/dyld/blob/main/dyld/Loader.cpp)
+- [8] [dyld4 — prebuilt and just-in-time loaders](https://github.com/apple-oss-distributions/dyld/blob/main/doc/dyld4.md)
+- [9] [dyld2 — legacy diagnostic variable names](https://github.com/apple-oss-distributions/dyld/blob/dyld-852.2/src/dyld2.cpp)
 {{#include ../../../../banners/hacktricks-training.md}}
-
-
